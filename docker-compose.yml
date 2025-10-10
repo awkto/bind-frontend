@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  bind-dns-manager:
+    image: yourusername/bind-dns-gui:latest
+    container_name: bind-dns-manager
+    ports:
+      - "5000:5000"
+    environment:
+      # BIND DNS Connection Settings
+      - BIND_HOST=${BIND_HOST}
+      - BIND_PORT=${BIND_PORT:-22}
+      - BIND_USER=${BIND_USER}
+      - BIND_SSH_KEY=${BIND_SSH_KEY}
+      - BIND_PASSWORD=${BIND_PASSWORD}
+      - DNS_ZONE=${DNS_ZONE}
+      - ZONE_FILE_PATH=${ZONE_FILE_PATH}
+    
+    # Mount SSH keys if using key-based authentication
+    volumes:
+      - ${SSH_KEY_PATH:-~/.ssh/id_rsa}:/root/.ssh/id_rsa:ro
+    #   - ./.env:/app/.env
+    
+    restart: unless-stopped
+    
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    
+    # Resource limits (optional)
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M

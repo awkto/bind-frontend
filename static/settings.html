@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - BIND DNS Manager</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .settings-container {
+            max-width: 800px;
+            margin: 2rem auto;
+        }
+        .settings-card {
+            border-radius: 1rem;
+            border: 1px solid var(--border-color);
+            background: var(--bg-card-solid);
+            box-shadow: var(--shadow-sm);
+            overflow: hidden;
+        }
+        .settings-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            background: var(--bg-table-header);
+        }
+        .settings-header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 0.5rem;
+        }
+        .settings-header p {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+        .settings-body {
+            padding: 2rem;
+        }
+        .alert {
+            padding: 1rem 1.25rem;
+            border-radius: 0.75rem;
+            margin-bottom: 1.5rem;
+            border: 1px solid;
+        }
+        .alert-info {
+            background: #eff6ff;
+            border-color: #bfdbfe;
+            color: #1e40af;
+        }
+        body.dark-mode .alert-info {
+            background: rgba(30, 64, 175, 0.15);
+            border-color: rgba(30, 64, 175, 0.3);
+            color: #93c5fd;
+        }
+        .alert-success {
+            background: #f0fdf4;
+            border-color: #86efac;
+            color: #059669;
+        }
+        body.dark-mode .alert-success {
+            background: rgba(5, 150, 105, 0.15);
+            border-color: rgba(5, 150, 105, 0.3);
+            color: #6ee7b7;
+        }
+        .alert-error {
+            background: #fef2f2;
+            border-color: #fecaca;
+            color: #dc2626;
+        }
+        body.dark-mode .alert-error {
+            background: rgba(220, 38, 38, 0.15);
+            border-color: rgba(220, 38, 38, 0.3);
+            color: #fca5a5;
+        }
+        .form-section {
+            margin-bottom: 2rem;
+        }
+        .form-section h2 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 1rem;
+        }
+        .button-group {
+            display: flex;
+            gap: 0.75rem;
+            margin-top: 1.5rem;
+        }
+        .btn-lg {
+            padding: 0.75rem 1.5rem;
+            font-size: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="page-container">
+        <div class="settings-container">
+            <!-- Back Navigation -->
+            <div id="backNavigation" style="margin-bottom: 1rem;">
+                <a href="/" class="btn btn-secondary">
+                    <svg class="btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                    </svg>
+                    Back to DNS Records
+                </a>
+            </div>
+
+            <div class="settings-card">
+                <div class="settings-header">
+                    <h1>⚙️ BIND DNS Settings</h1>
+                    <p id="settingsDescription">Configure your BIND DNS server connection via SSH to manage your DNS zone</p>
+                </div>
+                <div class="settings-body">
+                    <div id="loadingMessage" class="alert alert-info" style="display: none;">
+                        Loading current configuration...
+                    </div>
+                    <div id="successMessage" class="alert alert-success" style="display: none;"></div>
+                    <div id="errorMessage" class="alert alert-error" style="display: none;"></div>
+
+                    <form id="settingsForm">
+                        <div class="form-section">
+                            <h2>🖥️ BIND Server Connection</h2>
+                            <div class="form-group">
+                                <label for="bindHost">BIND Server Host *</label>
+                                <input type="text" id="bindHost" class="form-input" required 
+                                       placeholder="e.g., dns.example.com or 192.168.1.10">
+                                <small class="form-help">Hostname or IP address of your BIND DNS server</small>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="bindPort">SSH Port</label>
+                                <input type="number" id="bindPort" class="form-input" value="22" 
+                                       placeholder="22">
+                                <small class="form-help">SSH port (default: 22)</small>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="bindUser">SSH User *</label>
+                                <input type="text" id="bindUser" class="form-input" required 
+                                       placeholder="e.g., root or bind-admin">
+                                <small class="form-help">SSH username with access to BIND zone files</small>
+                            </div>
+                        </div>
+
+                        <div class="form-section">
+                            <h2>🔐 Authentication</h2>
+                            <div class="form-group">
+                                <label for="bindSshKey">SSH Private Key Path</label>
+                                <input type="text" id="bindSshKey" class="form-input" 
+                                       placeholder="e.g., /root/.ssh/id_rsa or ~/.ssh/id_rsa">
+                                <small class="form-help">Path to SSH private key file (leave empty to use password)</small>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="bindPassword">SSH Password</label>
+                                <div style="position: relative;">
+                                    <input type="password" id="bindPassword" class="form-input" 
+                                           placeholder="SSH password (if not using key)" style="padding-right: 3rem;">
+                                    <button type="button" id="toggleSecretBtn" 
+                                            style="position: absolute; right: 0.5rem; top: 50%; transform: translateY(-50%); 
+                                                   background: none; border: none; cursor: pointer; color: var(--text-secondary); 
+                                                   padding: 0.25rem; display: flex; align-items: center;"
+                                            title="Show/hide password">
+                                        <svg id="eyeIcon" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                        </svg>
+                                        <svg id="eyeOffIcon" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="display: none;">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <small class="form-help">Use either SSH key or password authentication</small>
+                            </div>
+                        </div>
+
+                        <div class="form-section">
+                            <h2>🌐 DNS Zone Configuration</h2>
+                            <div class="form-group">
+                                <label for="dnsZone">DNS Zone *</label>
+                                <input type="text" id="dnsZone" class="form-input" required 
+                                       placeholder="example.com">
+                                <small class="form-help">Your domain name (e.g., example.com)</small>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="zoneFilePath">Zone File Path *</label>
+                                <input type="text" id="zoneFilePath" class="form-input" required 
+                                       placeholder="/etc/bind/zones/db.example.com">
+                                <small class="form-help">Full path to the BIND zone file on the server</small>
+                            </div>
+                        </div>
+
+                        <div class="button-group">
+                            <button type="button" id="testConnectionBtn" class="btn btn-secondary btn-lg">
+                                <svg class="btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                Test Connection
+                            </button>
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <svg class="btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/>
+                                </svg>
+                                Save Configuration
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="settings.js"></script>
+</body>
+</html>

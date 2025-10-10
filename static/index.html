@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BIND DNS Manager</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="page-container">
+        <div class="container">
+            <!-- Modern Gradient Header -->
+            <header class="hero-header">
+                <div class="hero-gradient"></div>
+                <div class="hero-content">
+                    <div class="hero-left">
+                        <div class="icon-badge">
+                            <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <h1>BIND DNS Manager</h1>
+                            <div class="zone-badge-container">
+                                <span class="zone-badge">
+                                    <svg class="badge-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+                                    </svg>
+                                    <span class="zone-label">Zone</span>
+                                    <span class="zone-name" id="zoneName">Loading...</span>
+                                </span>
+                                <span class="divider">•</span>
+                                <span class="record-count" id="recordCount">0 records</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="hero-buttons">
+                        <button id="darkModeToggle" class="btn btn-ghost-light" title="Toggle dark mode">
+                            <svg id="moonIcon" class="btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+                            </svg>
+                            <svg id="sunIcon" class="btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="display: none;">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+                            </svg>
+                        </button>
+                        <button id="refreshBtn" class="btn btn-ghost-light">
+                            <svg class="btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                            </svg>
+                            Refresh
+                        </button>
+                        <button id="settingsBtn" class="btn btn-ghost-light">
+                            <svg class="btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                            </svg>
+                            Settings
+                        </button>
+                        <button id="addRecordBtn" class="btn btn-white">
+                            <svg class="btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                            </svg>
+                            Add New Record
+                        </button>
+                    </div>
+                </div>
+            </header>
+            </header>
+
+            <!-- Search and Filter Toolbar -->
+            <div class="toolbar-card">
+                <div class="toolbar-top">
+                    <div class="search-wrapper">
+                        <svg class="search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                        </svg>
+                        <input 
+                            type="text" 
+                            id="searchInput" 
+                            class="search-input" 
+                            placeholder="Search records (name, type, value, TTL)"
+                        />
+                    </div>
+                    <div class="results-count" id="resultsCount">0 results</div>
+                </div>
+                
+                <div class="filter-row">
+                    <div class="filter-label">
+                        <svg class="filter-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/>
+                        </svg>
+                        Record types:
+                    </div>
+                    <button id="selectAllBtn" class="btn btn-filter">All</button>
+                    <button id="deselectAllBtn" class="btn btn-filter">Clear</button>
+                    <div class="type-filters" id="typeFilters">
+                        <!-- Type filter buttons will be inserted here dynamically -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Records Table Card -->
+            <div class="table-card">
+                <div class="card-header">
+                    <div>
+                        <h2>DNS Records</h2>
+                        <p class="card-subtitle">Manage your DNS zone records</p>
+                    </div>
+                </div>
+                
+                <div id="loadingIndicator" class="loading">Loading records...</div>
+                <div id="errorMessage" class="error" style="display: none;"></div>
+                
+                <div class="table-wrapper">
+                    <table class="records-table">
+                        <thead>
+                            <tr>
+                                <th class="col-name">Name / FQDN</th>
+                                <th class="col-type">Type</th>
+                                <th class="col-ttl">TTL</th>
+                                <th class="col-values">Values</th>
+                                <th class="col-actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recordsTableBody">
+                            <!-- Records will be populated here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+        <!-- Add Record Modal -->
+        <div id="addModal" class="modal">
+            <div class="modal-backdrop"></div>
+            <div class="modal-content modal-modern">
+                <div class="modal-header">
+                    <h2>Add New DNS Record</h2>
+                    <button class="close" title="Close">&times;</button>
+                </div>
+                <form id="addRecordForm" class="modal-form">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="recordName">Record Name</label>
+                            <input type="text" id="recordName" name="recordName" required 
+                                   placeholder="e.g., www or @ for root" class="form-input">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="recordType">Record Type</label>
+                            <select id="recordType" name="recordType" required class="form-select">
+                                <option value="A">A (IPv4 Address)</option>
+                                <option value="AAAA">AAAA (IPv6 Address)</option>
+                                <option value="CNAME">CNAME (Canonical Name)</option>
+                                <option value="MX">MX (Mail Exchange)</option>
+                                <option value="TXT">TXT (Text)</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="recordTTL">TTL (seconds)</label>
+                            <input type="number" id="recordTTL" name="recordTTL" value="3600" required class="form-input">
+                        </div>
+                        
+                        <div class="form-group form-group-full">
+                            <label for="recordValues">Value(s)</label>
+                            <textarea id="recordValues" name="recordValues" required class="form-textarea"
+                                      placeholder="Enter one value per line&#10;For MX: priority exchange (e.g., 10 mail.example.com)"></textarea>
+                            <small class="form-help">Enter one value per line. For multiple A records, add multiple IPs.</small>
+                        </div>
+                    </div>
+                    
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" id="cancelAddBtn">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Add Record</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Edit Modal -->
+        <div id="editModal" class="modal">
+            <div class="modal-backdrop"></div>
+            <div class="modal-content modal-modern">
+                <div class="modal-header">
+                    <h2>Edit DNS Record</h2>
+                    <button class="close" title="Close">&times;</button>
+                </div>
+                <form id="editRecordForm" class="modal-form">
+                    <input type="hidden" id="editRecordName">
+                    <input type="hidden" id="editRecordType">
+                    <input type="hidden" id="editRecordId">
+                    
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Record Name</label>
+                            <input type="text" id="editRecordNameDisplay" disabled class="form-input">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Record Type</label>
+                            <input type="text" id="editRecordTypeDisplay" disabled class="form-input">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="editRecordTTL">TTL (seconds)</label>
+                            <input type="number" id="editRecordTTL" name="editRecordTTL" required class="form-input">
+                        </div>
+                        
+                        <div class="form-group form-group-full">
+                            <label for="editRecordValues">Value(s)</label>
+                            <textarea id="editRecordValues" name="editRecordValues" required class="form-textarea"></textarea>
+                            <small class="form-help">Enter one value per line.</small>
+                        </div>
+                    </div>
+                    
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" id="cancelEditBtn">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Update Record</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
