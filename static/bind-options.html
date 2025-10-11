@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BIND Configuration - BIND DNS Manager</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="page-container">
+        <div class="container">
+            <!-- Back Navigation -->
+            <div style="margin-bottom: 1rem;">
+                <a href="/servers.html" class="btn btn-secondary">
+                    <svg class="btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                    </svg>
+                    Back to Servers
+                </a>
+            </div>
+
+            <!-- Header -->
+            <header class="hero-header">
+                <div class="hero-gradient"></div>
+                <div class="hero-content">
+                    <div class="hero-left">
+                        <div class="icon-badge">
+                            <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <h1>BIND Service Configuration</h1>
+                            <p id="serverName" style="color: var(--text-secondary); margin-top: 0.5rem;">
+                                Loading server information...
+                            </p>
+                        </div>
+                    </div>
+                    <div class="hero-buttons">
+                        <button id="darkModeToggle" class="btn btn-ghost-light" title="Toggle dark mode">
+                            <svg id="moonIcon" class="btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+                            </svg>
+                            <svg id="sunIcon" class="btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="display: none;">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Messages -->
+            <div id="successMessage" class="alert alert-success" style="display: none; margin-top: 1rem;"></div>
+            <div id="errorMessage" class="alert alert-error" style="display: none; margin-top: 1rem;"></div>
+            <div id="loadingMessage" class="loading" style="display: none; margin-top: 1rem;">Loading configuration...</div>
+
+            <!-- Configuration Form -->
+            <div class="table-card" style="margin-top: 2rem;">
+                <div class="card-header">
+                    <div>
+                        <h2>BIND Options</h2>
+                        <p class="card-subtitle">Configure DNS forwarding, recursion, caching, and other BIND service settings</p>
+                    </div>
+                </div>
+                
+                <div style="padding: 2rem;">
+                    <form id="bindOptionsForm">
+                        <!-- Recursion & Forwarding -->
+                        <div class="form-section" style="margin-bottom: 2rem;">
+                            <h3 style="font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; color: var(--text-primary);">
+                                🔄 Recursion & Forwarding
+                            </h3>
+                            
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="recursion" class="form-checkbox">
+                                    <span>Enable Recursion</span>
+                                </label>
+                                <small class="form-help">Allow the server to perform recursive DNS queries on behalf of clients</small>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="forwarders">DNS Forwarders</label>
+                                <textarea id="forwarders" class="form-textarea" rows="3" 
+                                          placeholder="8.8.8.8&#10;8.8.4.4&#10;1.1.1.1"></textarea>
+                                <small class="form-help">Enter DNS forwarders (one IP address per line). Common options: Google (8.8.8.8), Cloudflare (1.1.1.1)</small>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="forwardType">Forward Type</label>
+                                <select id="forwardType" class="form-select">
+                                    <option value="first">first (try forwarders, then recurse)</option>
+                                    <option value="only">only (only use forwarders)</option>
+                                </select>
+                                <small class="form-help">"first" tries forwarders then recurses if they fail; "only" exclusively uses forwarders</small>
+                            </div>
+                        </div>
+
+                        <!-- Caching -->
+                        <div class="form-section" style="margin-bottom: 2rem;">
+                            <h3 style="font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; color: var(--text-primary);">
+                                💾 Caching
+                            </h3>
+                            
+                            <div class="form-group">
+                                <label for="maxCacheTtl">Max Cache TTL (seconds)</label>
+                                <input type="number" id="maxCacheTtl" class="form-input" placeholder="86400">
+                                <small class="form-help">Maximum time to cache records (default: 86400 = 1 day)</small>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="maxNcacheTtl">Max Negative Cache TTL (seconds)</label>
+                                <input type="number" id="maxNcacheTtl" class="form-input" placeholder="3600">
+                                <small class="form-help">Maximum time to cache negative responses (NXDOMAIN) (default: 3600 = 1 hour)</small>
+                            </div>
+                        </div>
+
+                        <!-- Query & Rate Limiting -->
+                        <div class="form-section" style="margin-bottom: 2rem;">
+                            <h3 style="font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; color: var(--text-primary);">
+                                ⚡ Query Settings & Rate Limiting
+                            </h3>
+                            
+                            <div class="form-group">
+                                <label for="maxClients">Max Clients</label>
+                                <input type="number" id="maxClients" class="form-input" placeholder="1000">
+                                <small class="form-help">Maximum number of simultaneous client TCP connections</small>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="recursiveClients">Recursive Clients</label>
+                                <input type="number" id="recursiveClients" class="form-input" placeholder="1000">
+                                <small class="form-help">Maximum number of simultaneous recursive lookups</small>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="dnssecValidation" class="form-checkbox">
+                                    <span>DNSSEC Validation</span>
+                                </label>
+                                <small class="form-help">Enable DNSSEC validation for increased security</small>
+                            </div>
+                        </div>
+
+                        <!-- Access Control -->
+                        <div class="form-section" style="margin-bottom: 2rem;">
+                            <h3 style="font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; color: var(--text-primary);">
+                                🔒 Access Control
+                            </h3>
+                            
+                            <div class="form-group">
+                                <label for="allowQuery">Allow Query From</label>
+                                <textarea id="allowQuery" class="form-textarea" rows="3" 
+                                          placeholder="any&#10;192.168.1.0/24&#10;10.0.0.0/8"></textarea>
+                                <small class="form-help">Networks allowed to send queries (one per line). Use "any" to allow all, or specify CIDR networks</small>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="allowRecursion">Allow Recursion From</label>
+                                <textarea id="allowRecursion" class="form-textarea" rows="3" 
+                                          placeholder="192.168.1.0/24&#10;10.0.0.0/8"></textarea>
+                                <small class="form-help">Networks allowed to use recursion (one per line). Should be more restrictive than allow-query</small>
+                            </div>
+                        </div>
+
+                        <!-- Logging -->
+                        <div class="form-section" style="margin-bottom: 2rem;">
+                            <h3 style="font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; color: var(--text-primary);">
+                                📝 Logging
+                            </h3>
+                            
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="queryLog" class="form-checkbox">
+                                    <span>Enable Query Logging</span>
+                                </label>
+                                <small class="form-help">Log all DNS queries (may impact performance on busy servers)</small>
+                            </div>
+                        </div>
+
+                        <!-- Advanced Options -->
+                        <div class="form-section" style="margin-bottom: 2rem;">
+                            <h3 style="font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; color: var(--text-primary);">
+                                ⚙️ Advanced Options
+                            </h3>
+                            
+                            <div class="form-group">
+                                <label for="listenOnV4">Listen On (IPv4)</label>
+                                <textarea id="listenOnV4" class="form-textarea" rows="2" 
+                                          placeholder="any&#10;192.168.1.10"></textarea>
+                                <small class="form-help">IPv4 addresses to listen on (one per line). Use "any" to listen on all interfaces</small>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="listenOnV6">Listen On (IPv6)</label>
+                                <textarea id="listenOnV6" class="form-textarea" rows="2" 
+                                          placeholder="any&#10;::1"></textarea>
+                                <small class="form-help">IPv6 addresses to listen on (one per line). Use "any" to listen on all interfaces</small>
+                            </div>
+                        </div>
+
+                        <div class="button-group" style="margin-top: 2rem;">
+                            <button type="button" id="resetBtn" class="btn btn-secondary">
+                                <svg class="btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                </svg>
+                                Reset to Defaults
+                            </button>
+                            <button type="submit" class="btn btn-primary">
+                                <svg class="btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/>
+                                </svg>
+                                Save Configuration
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Info Box -->
+            <div class="alert alert-info" style="margin-top: 2rem;">
+                <strong>ℹ️ Note:</strong> Changes to BIND options will require a BIND service restart to take effect. 
+                The configuration will be validated before being applied to the server.
+            </div>
+        </div>
+    </div>
+
+    <script src="bind-options.js"></script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 # BIND DNS Manager
 
-A modern web-based GUI for managing ISC BIND DNS zones. This application provides a user-friendly interface to view, add, edit, and delete DNS records across multiple zones by connecting to your BIND DNS server via SSH.
+A modern, web-based interface for managing multiple BIND DNS servers with comprehensive zone management and detailed service configuration.
 
 ![BIND DNS Manager](https://img.shields.io/badge/BIND-DNS%20Manager-005571?logo=linux)
 ![Python](https://img.shields.io/badge/Python-3.11+-green)
@@ -8,24 +8,66 @@ A modern web-based GUI for managing ISC BIND DNS zones. This application provide
 ![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)
 ![SSH](https://img.shields.io/badge/SSH-Paramiko-orange)
 
+## ✨ What's New - Multi-Server Management
+
+- 🖥️ **Manage Multiple BIND Servers**: Add unlimited DNS servers, switch between them with one click
+- ⚙️ **BIND Service Configuration**: Configure recursion, forwarding, caching, access control, and more
+- 🎯 **Server-Specific Settings**: Each server has independent BIND options and zone configurations
+- 🔄 **Automatic Migration**: Legacy single-server configs automatically migrate to multi-server format
+- 📋 **Separate Pages**: "Edit Connection" for server setup, "BIND Config" for service settings
+
 ## Features
 
-- 🌐 **Multi-Zone Support**: Automatically discover and manage all zones from your BIND configuration
-- 🔄 **Auto-Discovery**: Zones and zone files are automatically detected from named.conf
+### 🖥️ Multi-Server Management
+- Manage unlimited BIND DNS servers from a single interface
+- Quick server switching with active server selection
+- Independent configuration for each server
+- Automatic legacy configuration migration
+
+### 🌐 DNS Zone Management
+- � **Auto-Discovery**: Zones and zone files automatically detected from named.conf
 - 🎯 **Zone Selector**: Easy dropdown to switch between different DNS zones
-- 🚀 **Auto-Install BIND**: Automatically install BIND on target server (Ubuntu, Debian, RHEL, CentOS, Fedora)
-- 📊 **Real-time Installation Progress**: Visual workflow showing installation steps
 - ➕ Add new DNS records (A, AAAA, CNAME, MX, TXT, NS, etc.)
 - ✏️ Edit existing DNS records
 - 🗑️ Delete DNS records
-- 🔐 Secure SSH authentication (key-based or password)
 - ✅ Automatic zone validation with `named-checkzone`
 - ⚡ Zone reload via `rndc` after changes
-- ⚙️ Web-based configuration management
+- 💾 Remembers your last selected zone
+
+### ⚙️ BIND Service Configuration (New!)
+- **Recursion & Forwarding**: Configure recursive DNS with upstream forwarders (Google, Cloudflare, etc.)
+- **Caching**: Set TTLs for positive and negative responses
+- **Access Control**: Define allow-query and allow-recursion ACLs
+- **DNSSEC**: Enable validation for enhanced security
+- **Rate Limiting**: Configure query limits and client connections
+- **Logging**: Enable query logging for troubleshooting
+- **Network Settings**: Configure IPv4/IPv6 listen addresses
+
+### 🚀 Additional Features
 - 🎨 Modern, responsive web interface with dark mode
 - 🔍 Advanced search and filtering by record type
-- 💾 Remembers your last selected zone
+- � Secure SSH authentication (key-based or password)
+- 📊 Real-time BIND installation progress
 - 🐳 Docker support for easy deployment
+
+## Architecture
+
+```
+Server → BIND Options → DNS Zones → DNS Records
+```
+
+### Data Model Hierarchy
+- **Server Level**: Connection settings, BIND service options
+- **Zone Level**: Zone configurations per server  
+- **Record Level**: DNS records within each zone
+
+### Pages
+- **Main Page** (`/`): Manage zones and records for active server
+- **Manage Servers** (`/servers.html`): Add, edit, activate servers
+- **BIND Config** (`/bind-options.html`): Configure BIND service settings per server
+- **Edit Connection** (`/settings.html`): Edit server connection details
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) and [PAGE_STRUCTURE.md](PAGE_STRUCTURE.md) for detailed documentation.
 
 ## Quick Start with Docker
 

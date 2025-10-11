@@ -10,6 +10,7 @@ import dns.rdatatype
 from dns.exception import DNSException
 from jinja2 import Environment, FileSystemLoader
 from datetime import datetime
+import uuid
 
 # Load environment variables
 load_dotenv()
@@ -21,15 +22,97 @@ CORS(app)
 template_dir = os.path.join(os.path.dirname(__file__), 'templates')
 jinja_env = Environment(loader=FileSystemLoader(template_dir))
 
+# File to store server configurations
+SERVERS_FILE = 'servers.json'
+
+# Load or initialize servers data
+def load_servers():
+    """Load servers from JSON file"""
+    if os.path.exists(SERVERS_FILE):
+        try:
+            with open(SERVERS_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            return {'servers': [], 'active_server_id': None}
+    return {'servers': [], 'active_server_id': None}
+
+def save_servers(servers_data):
+    """Save servers to JSON file"""
+    with open(SERVERS_FILE, 'w') as f:
+        json.dump(servers_data, f, indent=2)
+
+# Initialize servers data structure
+servers_data = load_servers()
+
+# Migrate legacy .env config to servers.json if needed
+def migrate_legacy_config():
+    """Migrate old single-server .env config to new multi-server format"""
+    global servers_data
+    
+    # Check if we have legacy config and no servers yet
+    legacy_host = os.getenv('BIND_HOST')
+    if legacy_host and len(servers_data['servers']) == 0:
+        legacy_server = {
+            'id': str(uuid.uuid4()),
+            'name': 'Default Server',
+            'host': legacy_host,
+            'port': os.getenv('BIND_PORT', '22'),
+            'user': os.getenv('BIND_USER', ''),
+            'ssh_key': os.getenv('BIND_SSH_KEY', ''),
+            'password': os.getenv('BIND_PASSWORD', ''),
+            'config_path': os.getenv('BIND_CONFIG_PATH', '/etc/bind/named.conf'),
+            'bind_options': {}
+        }
+        servers_data['servers'].append(legacy_server)
+        servers_data['active_server_id'] = legacy_server['id']
+        save_servers(servers_data)
+        print(f"✅ Migrated legacy configuration to server: {legacy_server['name']}")
+
+migrate_legacy_config()
+
 # BIND DNS credentials and configuration (mutable for runtime updates)
+# This now references the active server from servers_data
+def get_active_server():
+    """Get the currently active server configuration"""
+    if not servers_data['active_server_id']:
+        return None
+    for server in servers_data['servers']:
+        if server['id'] == servers_data['active_server_id']:
+            return server
+    return None
+
+def get_server_by_id(server_id):
+    """Get a specific server by ID"""
+    for server in servers_data['servers']:
+        if server['id'] == server_id:
+            return server
+    return None
+
+# Legacy config object for backward compatibility
 config = {
-    'BIND_HOST': os.getenv('BIND_HOST'),
-    'BIND_PORT': os.getenv('BIND_PORT', '22'),
-    'BIND_USER': os.getenv('BIND_USER'),
-    'BIND_SSH_KEY': os.getenv('BIND_SSH_KEY'),
-    'BIND_PASSWORD': os.getenv('BIND_PASSWORD'),
-    'BIND_CONFIG_PATH': os.getenv('BIND_CONFIG_PATH', '/etc/bind/named.conf')
+    'BIND_HOST': None,
+    'BIND_PORT': '22',
+    'BIND_USER': None,
+    'BIND_SSH_KEY': None,
+    'BIND_PASSWORD': None,
+    'BIND_CONFIG_PATH': '/etc/bind/named.conf'
 }
+
+def update_config_from_server(server):
+    """Update the legacy config object from a server"""
+    global config
+    if server:
+        config['BIND_HOST'] = server.get('host')
+        config['BIND_PORT'] = server.get('port', '22')
+        config['BIND_USER'] = server.get('user')
+        config['BIND_SSH_KEY'] = server.get('ssh_key')
+        config['BIND_PASSWORD'] = server.get('password')
+        config['BIND_CONFIG_PATH'] = server.get('config_path', '/etc/bind/named.conf')
+
+# Update config with active server on startup
+active_server = get_active_server()
+if active_server:
+    update_config_from_server(active_server)
 
 def is_config_complete():
     """Check if all required configuration is present"""
@@ -1051,13 +1134,194 @@ def create_zone():
             except:
                 pass
 
+@app.route('/api/servers', methods=['GET'])
+def get_servers():
+    """Get all configured servers"""
+    try:
+        return jsonify({
+            'servers': servers_data['servers'],
+            'active_server_id': servers_data['active_server_id']
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/servers', methods=['POST'])
+def create_server():
+    """Create a new server configuration"""
+    try:
+        data = request.json
+        
+        # Validate required fields
+        if not data.get('name') or not data.get('host') or not data.get('user'):
+            return jsonify({'error': 'Missing required fields: name, host, user'}), 400
+        
+        # Must have either SSH key or password
+        if not data.get('ssh_key') and not data.get('password'):
+            return jsonify({'error': 'Either SSH key or password is required'}), 400
+        
+        new_server = {
+            'id': str(uuid.uuid4()),
+            'name': data['name'],
+            'host': data['host'],
+            'port': data.get('port', '22'),
+            'user': data['user'],
+            'ssh_key': data.get('ssh_key', ''),
+            'password': data.get('password', ''),
+            'config_path': data.get('config_path', '/etc/bind/named.conf'),
+            'bind_options': data.get('bind_options', {})
+        }
+        
+        servers_data['servers'].append(new_server)
+        
+        # Set as active if it's the first server
+        if not servers_data['active_server_id']:
+            servers_data['active_server_id'] = new_server['id']
+            update_config_from_server(new_server)
+        
+        save_servers(servers_data)
+        
+        return jsonify({
+            'success': True,
+            'server': new_server
+        }), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/servers/<server_id>', methods=['PUT'])
+def update_server(server_id):
+    """Update a server configuration"""
+    try:
+        server = get_server_by_id(server_id)
+        if not server:
+            return jsonify({'error': 'Server not found'}), 404
+        
+        data = request.json
+        
+        # Update fields
+        if 'name' in data:
+            server['name'] = data['name']
+        if 'host' in data:
+            server['host'] = data['host']
+        if 'port' in data:
+            server['port'] = data['port']
+        if 'user' in data:
+            server['user'] = data['user']
+        if 'ssh_key' in data:
+            server['ssh_key'] = data['ssh_key']
+        if 'password' in data:
+            server['password'] = data['password']
+        if 'config_path' in data:
+            server['config_path'] = data['config_path']
+        if 'bind_options' in data:
+            server['bind_options'] = data['bind_options']
+        
+        # Update active config if this is the active server
+        if servers_data['active_server_id'] == server_id:
+            update_config_from_server(server)
+        
+        save_servers(servers_data)
+        
+        return jsonify({
+            'success': True,
+            'server': server
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/servers/<server_id>', methods=['DELETE'])
+def delete_server(server_id):
+    """Delete a server configuration"""
+    try:
+        server = get_server_by_id(server_id)
+        if not server:
+            return jsonify({'error': 'Server not found'}), 404
+        
+        # Remove server
+        servers_data['servers'] = [s for s in servers_data['servers'] if s['id'] != server_id]
+        
+        # If this was the active server, set a new active server
+        if servers_data['active_server_id'] == server_id:
+            if len(servers_data['servers']) > 0:
+                servers_data['active_server_id'] = servers_data['servers'][0]['id']
+                update_config_from_server(servers_data['servers'][0])
+            else:
+                servers_data['active_server_id'] = None
+                update_config_from_server(None)
+        
+        save_servers(servers_data)
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/servers/<server_id>/activate', methods=['POST'])
+def activate_server(server_id):
+    """Set a server as the active server"""
+    try:
+        server = get_server_by_id(server_id)
+        if not server:
+            return jsonify({'error': 'Server not found'}), 404
+        
+        servers_data['active_server_id'] = server_id
+        update_config_from_server(server)
+        save_servers(servers_data)
+        
+        return jsonify({
+            'success': True,
+            'active_server_id': server_id
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/servers/<server_id>/bind-options', methods=['GET'])
+def get_bind_options(server_id):
+    """Get BIND options for a specific server"""
+    try:
+        server = get_server_by_id(server_id)
+        if not server:
+            return jsonify({'error': 'Server not found'}), 404
+        
+        return jsonify({
+            'server_id': server_id,
+            'server_name': server['name'],
+            'bind_options': server.get('bind_options', {})
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/servers/<server_id>/bind-options', methods=['PUT'])
+def update_bind_options(server_id):
+    """Update BIND options for a specific server"""
+    try:
+        server = get_server_by_id(server_id)
+        if not server:
+            return jsonify({'error': 'Server not found'}), 404
+        
+        data = request.json
+        server['bind_options'] = data.get('bind_options', {})
+        
+        save_servers(servers_data)
+        
+        # TODO: Apply these options to the actual BIND server
+        # This would involve generating named.conf.options and uploading it
+        
+        return jsonify({
+            'success': True,
+            'bind_options': server['bind_options']
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/config/status', methods=['GET'])
 def config_status():
     """Check if BIND DNS configuration is complete"""
     try:
         complete = is_config_complete()
+        has_servers = len(servers_data['servers']) > 0
         return jsonify({
-            'configured': complete
+            'configured': complete or has_servers,
+            'has_servers': has_servers,
+            'active_server_id': servers_data.get('active_server_id')
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500

@@ -28,12 +28,15 @@ const darkModeToggle = document.getElementById('darkModeToggle');
 const moonIcon = document.getElementById('moonIcon');
 const sunIcon = document.getElementById('sunIcon');
 const settingsBtn = document.getElementById('settingsBtn');
+const manageServersBtn = document.getElementById('manageServersBtn');
 
 // Store all records and selected types
 let allRecords = [];
 let selectedTypes = new Set();
 let availableZones = [];
 let currentZone = null;
+let availableServers = [];
+let currentServerId = null;
 
 // Check configuration status
 async function checkConfigStatus() {
@@ -41,7 +44,7 @@ async function checkConfigStatus() {
         const response = await fetch(`${API_BASE_URL}/config/status`);
         const data = await response.json();
         
-        if (!data.configured) {
+        if (!data.configured && !data.has_servers) {
             // Redirect to settings page if not configured
             window.location.href = '/settings.html';
             return false;
@@ -145,9 +148,13 @@ function disableDarkMode() {
 document.addEventListener('DOMContentLoaded', async () => {
     initDarkMode();
     
-    // Always attach settings button listener first, so it works even in SETUP MODE
+    // Always attach button listeners first, so they work even in SETUP MODE
     if (settingsBtn) {
         settingsBtn.addEventListener('click', () => window.location.href = '/settings.html');
+    }
+    
+    if (manageServersBtn) {
+        manageServersBtn.addEventListener('click', () => window.location.href = '/servers.html');
     }
     
     // Always attach dark mode toggle

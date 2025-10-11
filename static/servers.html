@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Servers - BIND DNS Manager</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="page-container">
+        <div class="container">
+            <!-- Back Navigation -->
+            <div style="margin-bottom: 1rem;">
+                <a href="/" class="btn btn-secondary">
+                    <svg class="btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                    </svg>
+                    Back to DNS Records
+                </a>
+            </div>
+
+            <!-- Header -->
+            <header class="hero-header">
+                <div class="hero-gradient"></div>
+                <div class="hero-content">
+                    <div class="hero-left">
+                        <div class="icon-badge">
+                            <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <h1>Manage BIND Servers</h1>
+                            <p style="color: var(--text-secondary); margin-top: 0.5rem;">
+                                Configure and manage multiple BIND DNS servers
+                            </p>
+                        </div>
+                    </div>
+                    <div class="hero-buttons">
+                        <button id="darkModeToggle" class="btn btn-ghost-light" title="Toggle dark mode">
+                            <svg id="moonIcon" class="btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+                            </svg>
+                            <svg id="sunIcon" class="btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="display: none;">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+                            </svg>
+                        </button>
+                        <button id="addServerBtn" class="btn btn-white">
+                            <svg class="btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                            </svg>
+                            Add Server
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Messages -->
+            <div id="successMessage" class="alert alert-success" style="display: none; margin-top: 1rem;"></div>
+            <div id="errorMessage" class="alert alert-error" style="display: none; margin-top: 1rem;"></div>
+
+            <!-- Servers List -->
+            <div class="table-card" style="margin-top: 2rem;">
+                <div class="card-header">
+                    <div>
+                        <h2>Configured Servers</h2>
+                        <p class="card-subtitle">Manage your BIND DNS server connections</p>
+                    </div>
+                </div>
+                
+                <div id="loadingIndicator" class="loading">Loading servers...</div>
+                
+                <div class="table-wrapper">
+                    <table class="records-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Host</th>
+                                <th>User</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="serversTableBody">
+                            <!-- Servers will be populated here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Server Modal -->
+    <div id="serverModal" class="modal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content modal-modern">
+            <div class="modal-header">
+                <h2 id="modalTitle">Add Server</h2>
+                <button class="close" title="Close">&times;</button>
+            </div>
+            <form id="serverForm" class="modal-form">
+                <div id="modalError" class="alert alert-error" style="display: none; margin-bottom: 1rem;"></div>
+                <div id="modalSuccess" class="alert alert-success" style="display: none; margin-bottom: 1rem;"></div>
+                
+                <input type="hidden" id="serverId">
+                
+                <div class="form-grid">
+                    <div class="form-group form-group-full">
+                        <label for="serverName">Server Name *</label>
+                        <input type="text" id="serverName" required class="form-input" placeholder="e.g., Production DNS">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="serverHost">Host *</label>
+                        <input type="text" id="serverHost" required class="form-input" placeholder="e.g., dns.example.com">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="serverPort">SSH Port</label>
+                        <input type="number" id="serverPort" value="22" class="form-input">
+                    </div>
+                    
+                    <div class="form-group form-group-full">
+                        <label for="serverUser">SSH User *</label>
+                        <input type="text" id="serverUser" required class="form-input" placeholder="e.g., root">
+                    </div>
+                    
+                    <div class="form-group form-group-full">
+                        <label for="serverPassword">SSH Password</label>
+                        <input type="password" id="serverPassword" class="form-input" placeholder="Leave empty to use SSH key">
+                    </div>
+                    
+                    <div class="form-group form-group-full">
+                        <label for="serverSshKey">SSH Private Key</label>
+                        <textarea id="serverSshKey" class="form-textarea" rows="4" 
+                                  placeholder="Paste your SSH private key here (or leave empty to use password)"></textarea>
+                    </div>
+                    
+                    <div class="form-group form-group-full">
+                        <label for="serverConfigPath">BIND Config Path</label>
+                        <input type="text" id="serverConfigPath" class="form-input" 
+                               value="/etc/bind/named.conf" placeholder="/etc/bind/named.conf">
+                    </div>
+                </div>
+                
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="cancelBtn">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Server</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="servers.js"></script>
+</body>
+</html>

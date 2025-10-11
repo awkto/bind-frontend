@@ -228,6 +228,27 @@ body.dark-mode .zone-badge-modal {
 .modal-footer { display: flex; justify-content: flex-end; gap: 0.75rem; padding: 1.5rem;
     border-top: 1px solid var(--border-color); }
 
+/* Alert Messages */
+.alert { padding: 1rem 1.25rem; border-radius: 0.75rem; margin-bottom: 1rem; border: 1px solid; font-size: 0.875rem; }
+.alert-info { background: #eff6ff; border-color: #bfdbfe; color: #1e40af; }
+body.dark-mode .alert-info { background: rgba(30, 64, 175, 0.15); border-color: rgba(30, 64, 175, 0.3); color: #93c5fd; }
+.alert-success { background: #f0fdf4; border-color: #86efac; color: #059669; }
+body.dark-mode .alert-success { background: rgba(5, 150, 105, 0.15); border-color: rgba(5, 150, 105, 0.3); color: #6ee7b7; }
+.alert-error { background: #fef2f2; border-color: #fecaca; color: #dc2626; }
+body.dark-mode .alert-error { background: rgba(220, 38, 38, 0.15); border-color: rgba(220, 38, 38, 0.3); color: #fca5a5; }
+.alert strong { font-weight: 600; }
+
+/* Form Sections */
+.form-section { margin-bottom: 2rem; }
+.form-section h3 { font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; color: var(--text-primary); }
+.checkbox-label { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-weight: 500; }
+.form-checkbox { width: 1.25rem; height: 1.25rem; cursor: pointer; accent-color: #4f46e5; }
+.button-group { display: flex; gap: 0.75rem; margin-top: 1.5rem; flex-wrap: wrap; }
+.btn-lg { padding: 0.75rem 1.5rem; font-size: 1rem; }
+
+/* Additional Utilities */
+.col-actions { white-space: nowrap; }
+
 /* Responsive */
 @media (max-width: 768px) {
     .page-container { padding: 1rem 0.5rem; }
