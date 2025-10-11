@@ -230,13 +230,6 @@
                         <div class="form-section">
                             <h2>🔐 Authentication</h2>
                             <div class="form-group">
-                                <label for="bindSshKey">SSH Private Key Path</label>
-                                <input type="text" id="bindSshKey" class="form-input" 
-                                       placeholder="e.g., /root/.ssh/id_rsa or ~/.ssh/id_rsa">
-                                <small class="form-help">Path to SSH private key file (leave empty to use password)</small>
-                            </div>
-                            
-                            <div class="form-group">
                                 <label for="bindPassword">SSH Password</label>
                                 <div style="position: relative;">
                                     <input type="password" id="bindPassword" class="form-input" 
@@ -255,7 +248,15 @@
                                         </svg>
                                     </button>
                                 </div>
-                                <small class="form-help">Use either SSH key or password authentication</small>
+                                <small class="form-help">Use either SSH password or SSH private key authentication</small>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="bindSshKey">SSH Private Key (Content)</label>
+                                <textarea id="bindSshKey" class="form-input" rows="6" 
+                                       placeholder="Paste your SSH private key here (e.g., -----BEGIN OPENSSH PRIVATE KEY-----)&#10;Leave empty to use password authentication"
+                                       style="font-family: monospace; font-size: 0.875rem; resize: vertical;"></textarea>
+                                <small class="form-help">Paste the full content of your SSH private key (not the file path). Leave empty to use password.</small>
                             </div>
                         </div>
 

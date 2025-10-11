@@ -58,6 +58,12 @@
                             </svg>
                             Settings
                         </button>
+                        <button id="createZoneBtn" class="btn btn-white">
+                            <svg class="btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/>
+                            </svg>
+                            Create Zone
+                        </button>
                         <button id="addRecordBtn" class="btn btn-white">
                             <svg class="btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -137,10 +143,17 @@
             <div class="modal-backdrop"></div>
             <div class="modal-content modal-modern">
                 <div class="modal-header">
-                    <h2>Add New DNS Record</h2>
+                    <div>
+                        <h2>Add New DNS Record</h2>
+                        <div id="addRecordZoneBadge" class="zone-badge-modal"></div>
+                    </div>
                     <button class="close" title="Close">&times;</button>
                 </div>
                 <form id="addRecordForm" class="modal-form">
+                    <!-- Error/Success Messages -->
+                    <div id="addModalError" class="alert alert-error" style="display: none; margin-bottom: 1rem;"></div>
+                    <div id="addModalSuccess" class="alert alert-success" style="display: none; margin-bottom: 1rem;"></div>
+                    
                     <div class="form-grid">
                         <div class="form-group">
                             <label for="recordName">Record Name</label>
@@ -189,6 +202,10 @@
                     <button class="close" title="Close">&times;</button>
                 </div>
                 <form id="editRecordForm" class="modal-form">
+                    <!-- Error/Success Messages -->
+                    <div id="editModalError" class="alert alert-error" style="display: none; margin-bottom: 1rem;"></div>
+                    <div id="editModalSuccess" class="alert alert-success" style="display: none; margin-bottom: 1rem;"></div>
+                    
                     <input type="hidden" id="editRecordName">
                     <input type="hidden" id="editRecordType">
                     <input type="hidden" id="editRecordId">
@@ -219,6 +236,69 @@
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" id="cancelEditBtn">Cancel</button>
                         <button type="submit" class="btn btn-primary">Update Record</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Create Zone Modal -->
+        <div id="createZoneModal" class="modal">
+            <div class="modal-backdrop"></div>
+            <div class="modal-content modal-modern">
+                <div class="modal-header">
+                    <h2>Create New DNS Zone</h2>
+                    <button class="close" title="Close">&times;</button>
+                </div>
+                <form id="createZoneForm" class="modal-form">
+                    <!-- Error/Success Messages -->
+                    <div id="createZoneModalError" class="alert alert-error" style="display: none; margin-bottom: 1rem;"></div>
+                    <div id="createZoneModalSuccess" class="alert alert-success" style="display: none; margin-bottom: 1rem;"></div>
+                    
+                    <div class="form-grid">
+                        <div class="form-group form-group-full">
+                            <label for="zoneName">Zone Name *</label>
+                            <input type="text" id="zoneName" name="zoneName" required 
+                                   placeholder="e.g., example.com" class="form-input">
+                            <small class="form-help">Enter the domain name for this zone (must be a valid FQDN)</small>
+                        </div>
+                        
+                        <div class="form-group form-group-full">
+                            <label for="primaryNS">Primary Nameserver *</label>
+                            <input type="text" id="primaryNS" name="primaryNS" required 
+                                   placeholder="e.g., ns1.example.com" class="form-input">
+                            <small class="form-help">Fully qualified domain name of the primary nameserver</small>
+                        </div>
+                        
+                        <div class="form-group form-group-full">
+                            <label for="nsIpAddress">Nameserver IP Address</label>
+                            <input type="text" id="nsIpAddress" name="nsIpAddress" 
+                                   placeholder="e.g., 192.168.1.10" class="form-input">
+                            <small class="form-help">
+                                <strong>Required if NS is within this zone</strong> (e.g., ns1.example.com for example.com zone).
+                                This creates a glue record (A record) for the nameserver.
+                            </small>
+                        </div>
+                        
+                        <div class="form-group form-group-full">
+                            <label for="adminEmail">Admin Email *</label>
+                            <input type="email" id="adminEmail" name="adminEmail" required 
+                                   placeholder="e.g., admin@example.com" class="form-input">
+                            <small class="form-help">Email address of the zone administrator (defaults to admin@[zone-name])</small>
+                        </div>
+
+                        <div class="form-group form-group-full" style="background: var(--color-indigo-50); padding: 12px; border-radius: 8px; border: 1px solid var(--color-indigo-200);">
+                            <p style="font-size: 0.875rem; color: var(--color-indigo-700); margin: 0;">
+                                <strong>ℹ️ Note:</strong> The zone file will be created with default SOA and NS records. 
+                                If your nameserver is within this zone, you must provide its IP address to create a glue record.
+                                The BIND configuration will be verified before applying changes. 
+                                BIND will be automatically reloaded after zone creation.
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" id="cancelCreateZoneBtn">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Create Zone</button>
                     </div>
                 </form>
             </div>

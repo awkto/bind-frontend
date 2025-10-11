@@ -1,0 +1,23 @@
+;
+; Zone file for {{ zone_name }}
+; Generated on {{ timestamp }}
+;
+$TTL {{ ttl }}
+@       IN      SOA     {{ primary_ns }}. {{ admin_email_bind }}. (
+                        {{ serial }}    ; Serial (YYYYMMDDNN)
+                        3600            ; Refresh (1 hour)
+                        1800            ; Retry (30 minutes)
+                        604800          ; Expire (1 week)
+                        86400 )         ; Minimum TTL (1 day)
+;
+; Name servers
+@       IN      NS      {{ primary_ns }}.
+{% if ns_ip_address %}
+;
+; Glue records (A records for nameservers within this zone)
+{{ ns_hostname }}       IN      A       {{ ns_ip_address }}
+{% endif %}
+;
+; A Records
+; Add your DNS records below
+;

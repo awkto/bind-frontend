@@ -1,0 +1,5 @@
+BIND_HOST='pi.dnsif.ca'
+BIND_PORT='22'
+BIND_USER='gui'
+BIND_PASSWORD='summertime'
+BIND_CONFIG_PATH='/etc/bind/named.conf'

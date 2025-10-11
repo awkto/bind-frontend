@@ -8,12 +8,18 @@ from io import StringIO
 import dns.zone
 import dns.rdatatype
 from dns.exception import DNSException
+from jinja2 import Environment, FileSystemLoader
+from datetime import datetime
 
 # Load environment variables
 load_dotenv()
 
 app = Flask(__name__, static_folder='static')
 CORS(app)
+
+# Setup Jinja2 for templates
+template_dir = os.path.join(os.path.dirname(__file__), 'templates')
+jinja_env = Environment(loader=FileSystemLoader(template_dir))
 
 # BIND DNS credentials and configuration (mutable for runtime updates)
 config = {
@@ -62,8 +68,42 @@ def get_ssh_client():
         
         if config.get('BIND_SSH_KEY'):
             # Use SSH key authentication
-            key_path = os.path.expanduser(config['BIND_SSH_KEY'])
-            private_key = paramiko.RSAKey.from_private_key_file(key_path)
+            key_content = config['BIND_SSH_KEY']
+            
+            # Check if it's a file path or key content
+            if key_content.startswith('-----BEGIN'):
+                # It's the actual key content
+                from io import StringIO
+                key_file = StringIO(key_content)
+                try:
+                    # Try RSA key first
+                    private_key = paramiko.RSAKey.from_private_key(key_file)
+                except paramiko.ssh_exception.SSHException:
+                    # Try other key types
+                    key_file.seek(0)
+                    try:
+                        private_key = paramiko.Ed25519Key.from_private_key(key_file)
+                    except paramiko.ssh_exception.SSHException:
+                        key_file.seek(0)
+                        try:
+                            private_key = paramiko.ECDSAKey.from_private_key(key_file)
+                        except paramiko.ssh_exception.SSHException:
+                            key_file.seek(0)
+                            private_key = paramiko.DSSKey.from_private_key(key_file)
+            else:
+                # It's a file path (legacy support)
+                key_path = os.path.expanduser(key_content)
+                try:
+                    private_key = paramiko.RSAKey.from_private_key_file(key_path)
+                except paramiko.ssh_exception.SSHException:
+                    try:
+                        private_key = paramiko.Ed25519Key.from_private_key_file(key_path)
+                    except paramiko.ssh_exception.SSHException:
+                        try:
+                            private_key = paramiko.ECDSAKey.from_private_key_file(key_path)
+                        except paramiko.ssh_exception.SSHException:
+                            private_key = paramiko.DSSKey.from_private_key_file(key_path)
+            
             ssh.connect(
                 hostname=config['BIND_HOST'],
                 port=port,
@@ -87,12 +127,26 @@ def get_ssh_client():
     except Exception as e:
         raise Exception(f"Failed to connect to BIND server: {str(e)}")
 
+def check_bind_installed(ssh):
+    """Check if BIND is installed on the server using bash script"""
+    try:
+        # Simple check - just look for named binary
+        stdin, stdout, stderr = ssh.exec_command('command -v named >/dev/null 2>&1 && echo "INSTALLED" || echo "NOT_INSTALLED"')
+        result = stdout.read().decode('utf-8').strip()
+        return result == "INSTALLED"
+    except Exception as e:
+        print(f"Error checking BIND installation: {str(e)}")
+        return False
+
 def install_bind_on_server(ssh_config):
     """
-    Install BIND on the target server. Yields progress updates.
+    Install BIND on the target server using bash scripts.
+    Yields progress updates by monitoring the log file.
     ssh_config should contain: host, port, user, ssh_key or password
     """
     ssh = None
+    sftp = None
+    
     try:
         # Step 1: Connect to server
         yield {'step': 'connect', 'status': 'running', 'message': 'Connecting to server...'}
@@ -102,8 +156,40 @@ def install_bind_on_server(ssh_config):
         
         port = int(ssh_config.get('port', 22))
         if ssh_config.get('ssh_key'):
-            key_path = os.path.expanduser(ssh_config['ssh_key'])
-            private_key = paramiko.RSAKey.from_private_key_file(key_path)
+            key_content = ssh_config['ssh_key']
+            
+            # Check if it's a file path or key content
+            if key_content.startswith('-----BEGIN'):
+                # It's the actual key content
+                from io import StringIO
+                key_file = StringIO(key_content)
+                try:
+                    private_key = paramiko.RSAKey.from_private_key(key_file)
+                except paramiko.ssh_exception.SSHException:
+                    key_file.seek(0)
+                    try:
+                        private_key = paramiko.Ed25519Key.from_private_key(key_file)
+                    except paramiko.ssh_exception.SSHException:
+                        key_file.seek(0)
+                        try:
+                            private_key = paramiko.ECDSAKey.from_private_key(key_file)
+                        except paramiko.ssh_exception.SSHException:
+                            key_file.seek(0)
+                            private_key = paramiko.DSSKey.from_private_key(key_file)
+            else:
+                # It's a file path (legacy support)
+                key_path = os.path.expanduser(key_content)
+                try:
+                    private_key = paramiko.RSAKey.from_private_key_file(key_path)
+                except paramiko.ssh_exception.SSHException:
+                    try:
+                        private_key = paramiko.Ed25519Key.from_private_key_file(key_path)
+                    except paramiko.ssh_exception.SSHException:
+                        try:
+                            private_key = paramiko.ECDSAKey.from_private_key_file(key_path)
+                        except paramiko.ssh_exception.SSHException:
+                            private_key = paramiko.DSSKey.from_private_key_file(key_path)
+            
             ssh.connect(
                 hostname=ssh_config['host'],
                 port=port,
@@ -125,122 +211,78 @@ def install_bind_on_server(ssh_config):
         
         yield {'step': 'connect', 'status': 'success', 'message': 'Connected successfully'}
         
-        # Step 2: Detect OS
-        yield {'step': 'detect_os', 'status': 'running', 'message': 'Detecting operating system...'}
+        # Step 2: Upload bootstrap script
+        yield {'step': 'upload', 'status': 'running', 'message': 'Uploading installation script...'}
         
-        stdin, stdout, stderr = ssh.exec_command('cat /etc/os-release')
-        os_release = stdout.read().decode('utf-8')
+        sftp = ssh.open_sftp()
+        script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'bootstrap-bind.sh')
         
-        os_type = None
-        os_name = ''
-        if 'ubuntu' in os_release.lower() or 'debian' in os_release.lower():
-            os_type = 'deb'
-            os_name = 'Debian/Ubuntu'
-        elif 'rhel' in os_release.lower() or 'centos' in os_release.lower() or 'fedora' in os_release.lower() or 'red hat' in os_release.lower():
-            os_type = 'rpm'
-            if 'fedora' in os_release.lower():
-                os_name = 'Fedora'
-            else:
-                os_name = 'RHEL/CentOS'
-        
-        if not os_type:
-            yield {'step': 'detect_os', 'status': 'error', 'message': 'Unsupported operating system'}
+        if not os.path.exists(script_path):
+            yield {'step': 'upload', 'status': 'error', 'message': f'Script not found: {script_path}'}
             return
         
-        yield {'step': 'detect_os', 'status': 'success', 'message': f'Detected {os_name}'}
+        remote_script = '/tmp/bootstrap-bind.sh'
+        sftp.put(script_path, remote_script)
+        sftp.chmod(remote_script, 0o755)
         
-        # Step 3: Check if BIND is already installed
-        yield {'step': 'check_bind', 'status': 'running', 'message': 'Checking if BIND is already installed...'}
+        yield {'step': 'upload', 'status': 'success', 'message': 'Installation script uploaded'}
         
-        if os_type == 'deb':
-            stdin, stdout, stderr = ssh.exec_command('dpkg -l | grep bind9')
-        else:
-            stdin, stdout, stderr = ssh.exec_command('rpm -qa | grep bind')
+        # Step 3: Run installation script
+        yield {'step': 'install', 'status': 'running', 'message': 'Running installation script...'}
         
-        existing_bind = stdout.read().decode('utf-8')
-        if existing_bind and 'bind' in existing_bind:
-            yield {'step': 'check_bind', 'status': 'success', 'message': 'BIND is already installed'}
-            yield {'step': 'complete', 'status': 'success', 'message': 'BIND installation verified'}
-            return
+        # Execute the script and capture output in real-time
+        stdin, stdout, stderr = ssh.exec_command(f'bash {remote_script}', get_pty=True)
         
-        yield {'step': 'check_bind', 'status': 'success', 'message': 'BIND not found, proceeding with installation'}
+        # Read output line by line
+        current_step = 'install'
+        for line in stdout:
+            line = line.strip()
+            if line:
+                # Parse step information from log output
+                if 'STEP:' in line:
+                    step_msg = line.split('STEP:')[-1].strip()
+                    yield {'step': current_step, 'status': 'running', 'message': step_msg}
+                elif 'ERROR:' in line:
+                    error_msg = line.split('ERROR:')[-1].strip()
+                    yield {'step': current_step, 'status': 'error', 'message': error_msg}
+                    return
+                elif 'successfully' in line.lower() or 'complete' in line.lower():
+                    yield {'step': current_step, 'status': 'running', 'message': line}
         
-        # Step 4: Install BIND
-        yield {'step': 'install', 'status': 'running', 'message': f'Installing BIND on {os_name}...'}
-        
-        if os_type == 'deb':
-            # Update package lists
-            stdin, stdout, stderr = ssh.exec_command('sudo apt-get update')
-            stdout.channel.recv_exit_status()  # Wait for command to complete
-            
-            # Install BIND
-            stdin, stdout, stderr = ssh.exec_command('sudo DEBIAN_FRONTEND=noninteractive apt-get install -y bind9 bind9utils bind9-doc')
-            exit_status = stdout.channel.recv_exit_status()
-            install_output = stdout.read().decode('utf-8')
-            install_error = stderr.read().decode('utf-8')
-            
-            if exit_status != 0:
-                yield {'step': 'install', 'status': 'error', 'message': f'Installation failed: {install_error}'}
-                return
-        
-        elif os_type == 'rpm':
-            # Determine package manager
-            stdin, stdout, stderr = ssh.exec_command('which dnf')
-            has_dnf = stdout.read().decode('utf-8').strip()
-            pkg_manager = 'dnf' if has_dnf else 'yum'
-            
-            # Install BIND
-            stdin, stdout, stderr = ssh.exec_command(f'sudo {pkg_manager} install -y bind bind-utils')
-            exit_status = stdout.channel.recv_exit_status()
-            install_output = stdout.read().decode('utf-8')
-            install_error = stderr.read().decode('utf-8')
-            
-            if exit_status != 0:
-                yield {'step': 'install', 'status': 'error', 'message': f'Installation failed: {install_error}'}
-                return
-        
-        yield {'step': 'install', 'status': 'success', 'message': 'BIND installed successfully'}
-        
-        # Step 5: Enable and start BIND service
-        yield {'step': 'enable_service', 'status': 'running', 'message': 'Enabling BIND service...'}
-        
-        if os_type == 'deb':
-            service_name = 'bind9'
-        else:
-            service_name = 'named'
-        
-        # Enable service
-        stdin, stdout, stderr = ssh.exec_command(f'sudo systemctl enable {service_name}')
-        stdout.channel.recv_exit_status()
-        
-        # Start service
-        stdin, stdout, stderr = ssh.exec_command(f'sudo systemctl start {service_name}')
+        # Check exit status
         exit_status = stdout.channel.recv_exit_status()
         
-        if exit_status != 0:
-            service_error = stderr.read().decode('utf-8')
-            yield {'step': 'enable_service', 'status': 'error', 'message': f'Failed to start service: {service_error}'}
-            return
-        
-        yield {'step': 'enable_service', 'status': 'success', 'message': f'BIND service ({service_name}) started successfully'}
-        
-        # Step 6: Verify installation
-        yield {'step': 'verify', 'status': 'running', 'message': 'Verifying BIND installation...'}
-        
-        stdin, stdout, stderr = ssh.exec_command(f'sudo systemctl status {service_name}')
-        status_output = stdout.read().decode('utf-8')
-        
-        if 'active (running)' in status_output:
-            yield {'step': 'verify', 'status': 'success', 'message': 'BIND is running correctly'}
-            yield {'step': 'complete', 'status': 'success', 'message': 'Installation completed successfully!'}
+        if exit_status == 0:
+            yield {'step': 'install', 'status': 'success', 'message': 'BIND installed successfully'}
+            
+            # Step 4: Verify installation
+            yield {'step': 'verify', 'status': 'running', 'message': 'Verifying installation...'}
+            
+            # Check if BIND is running
+            bind_installed = check_bind_installed(ssh)
+            
+            if bind_installed:
+                yield {'step': 'verify', 'status': 'success', 'message': 'BIND is installed and running'}
+                yield {'step': 'complete', 'status': 'success', 'message': 'Installation completed successfully!'}
+            else:
+                yield {'step': 'verify', 'status': 'error', 'message': 'BIND installed but not running properly'}
         else:
-            yield {'step': 'verify', 'status': 'error', 'message': 'BIND installed but not running properly'}
+            yield {'step': 'install', 'status': 'error', 'message': f'Installation script failed with exit code {exit_status}'}
         
     except Exception as e:
         yield {'step': 'error', 'status': 'error', 'message': f'Installation failed: {str(e)}'}
     finally:
+        if sftp:
+            try:
+                sftp.close()
+            except:
+                pass
         if ssh:
-            ssh.close()
+            try:
+                ssh.close()
+            except:
+                pass
+
 
 def discover_zones():
     """Discover all zones from BIND configuration files"""
@@ -304,8 +346,8 @@ def discover_zones():
                 
                 # Handle relative paths
                 if not zone_file.startswith('/'):
-                    # Assume relative to /var/named or /etc/bind
-                    for base_dir in ['/var/named', '/etc/bind', '/var/cache/bind']:
+                    # Check standard zone directories (prioritize /var/lib/bind/zones)
+                    for base_dir in ['/var/lib/bind/zones', '/var/named', '/etc/bind', '/var/cache/bind']:
                         test_path = f'{base_dir}/{zone_file}'
                         stdin, stdout, stderr = ssh.exec_command(f'test -f {test_path} && echo "exists"')
                         exists = stdout.read().decode('utf-8').strip()
@@ -382,8 +424,19 @@ def parse_zone_data(zone_data, zone_name):
                         # MX records come as "priority exchange"
                         values.append(rdata_str.replace(' ', ' ', 1))
                     elif record_type == 'SOA':
-                        # Skip SOA records for now (they're complex)
-                        continue
+                        # SOA records: "mname rname serial refresh retry expire minimum"
+                        # Parse and format SOA record for display
+                        parts = rdata_str.split()
+                        if len(parts) >= 7:
+                            soa_formatted = (
+                                f"{parts[0]} {parts[1]} "
+                                f"(Serial: {parts[2]}, Refresh: {parts[3]}, "
+                                f"Retry: {parts[4]}, Expire: {parts[5]}, TTL: {parts[6]})"
+                            )
+                            values.append(soa_formatted)
+                        else:
+                            # Fallback to raw format if parsing fails
+                            values.append(rdata_str)
                     else:
                         values.append(rdata_str)
                 
@@ -405,6 +458,7 @@ def parse_zone_data(zone_data, zone_name):
 def write_zone_file(zone_data, zone_name=None, zone_file_path=None):
     """Write updated zone file to BIND server via SSH"""
     ssh = None
+    sftp = None
     try:
         ssh = get_ssh_client()
         
@@ -418,39 +472,295 @@ def write_zone_file(zone_data, zone_name=None, zone_file_path=None):
         if not zone_file_path:
             raise ValueError("Zone file path is required")
         
-        # Create a temporary file and write to it
-        temp_path = f"{zone_file_path}.tmp"
+        # Use /tmp for temporary file (always writable)
+        import hashlib
+        temp_filename = f"zone_{hashlib.md5(zone_name.encode()).hexdigest()}.tmp"
+        temp_path = f"/tmp/{temp_filename}"
         
-        # Write zone data to temp file
-        sftp = ssh.open_sftp()
-        with sftp.file(temp_path, 'w') as f:
-            f.write(zone_data)
-        sftp.close()
+        print(f"Writing zone data to temporary file: {temp_path}")
+        
+        # Write zone data to temp file in /tmp
+        try:
+            sftp = ssh.open_sftp()
+            with sftp.file(temp_path, 'w') as f:
+                f.write(zone_data)
+            sftp.close()
+            sftp = None
+        except Exception as sftp_error:
+            print(f"⚠️  SFTP write failed: {sftp_error}, trying alternative method...")
+            # Fallback: use echo with sudo
+            # Escape single quotes in zone_data
+            zone_data_escaped = zone_data.replace("'", "'\\''")
+            stdin, stdout, stderr = ssh.exec_command(f"echo '{zone_data_escaped}' | sudo tee {temp_path} > /dev/null")
+            write_error = stderr.read().decode('utf-8')
+            if write_error and 'permission denied' not in write_error.lower():
+                print(f"Warning during temp file write: {write_error}")
         
         # Validate the zone file with named-checkzone
+        print(f"Validating zone file: {zone_name}")
         stdin, stdout, stderr = ssh.exec_command(f'named-checkzone {zone_name} {temp_path}')
         check_output = stdout.read().decode('utf-8')
         check_error = stderr.read().decode('utf-8')
         
-        if 'OK' not in check_output:
-            ssh.exec_command(f'rm {temp_path}')
+        if 'OK' not in check_output and 'loaded serial' not in check_output:
+            ssh.exec_command(f'sudo rm {temp_path}')
             raise Exception(f"Zone file validation failed: {check_error}")
         
-        # Move temp file to actual zone file
-        ssh.exec_command(f'mv {temp_path} {zone_file_path}')
+        print(f"Zone file validated successfully")
         
-        # Reload the zone
-        stdin, stdout, stderr = ssh.exec_command(f'rndc reload {zone_name}')
+        # Move temp file to actual zone file (use sudo for permissions)
+        print(f"⚠️  Using sudo to write zone file: {zone_file_path}")
+        stdin, stdout, stderr = ssh.exec_command(f'sudo mv {temp_path} {zone_file_path}')
+        move_error = stderr.read().decode('utf-8')
+        if move_error and 'permission denied' not in move_error.lower():
+            print(f"Warning during zone file move: {move_error}")
+        
+        # Set proper permissions on zone file
+        stdin, stdout, stderr = ssh.exec_command(f'sudo chmod 644 {zone_file_path}')
+        
+        # Reload the zone (use sudo for rndc)
+        print(f"⚠️  Using sudo to reload zone: {zone_name}")
+        stdin, stdout, stderr = ssh.exec_command(f'sudo rndc reload {zone_name}')
         reload_output = stdout.read().decode('utf-8')
         reload_error = stderr.read().decode('utf-8')
         
-        if 'zone reload up-to-date' not in reload_output.lower() and 'reload' not in reload_output.lower():
-            print(f"Warning: Zone reload may have issues: {reload_error}")
+        print(f"Zone reload output: {reload_output}")
+        if reload_error:
+            print(f"Zone reload stderr: {reload_error}")
         
+        if 'zone reload up-to-date' not in reload_output.lower() and 'reload' not in reload_output.lower():
+            print(f"⚠️  Warning: Zone reload may have issues: {reload_error}")
+        
+        print(f"✅ Zone file written and reloaded successfully: {zone_name}")
         return True
+    except Exception as e:
+        print(f"❌ Error in write_zone_file: {str(e)}")
+        raise
     finally:
+        if sftp:
+            try:
+                sftp.close()
+            except:
+                pass
         if ssh:
-            ssh.close()
+            try:
+                ssh.close()
+            except:
+                pass
+
+# Template rendering functions
+def render_zone_file(zone_name, primary_ns, admin_email, ttl=86400, ns_ip_address=None):
+    """Render zone file from template"""
+    # Generate serial number (YYYYMMDD01 format)
+    serial = datetime.now().strftime('%Y%m%d01')
+    
+    # Convert admin email (replace @ with .)
+    admin_email_bind = admin_email.replace('@', '.')
+    
+    # Extract hostname from NS if it's within the zone (for glue record)
+    ns_hostname = None
+    if ns_ip_address and primary_ns:
+        # Check if NS is within this zone
+        if primary_ns.endswith(f'.{zone_name}'):
+            # Extract the hostname part (e.g., "ns1" from "ns1.example.com")
+            ns_hostname = primary_ns.replace(f'.{zone_name}', '')
+        elif primary_ns == zone_name:
+            # NS is the zone apex
+            ns_hostname = '@'
+    
+    template = jinja_env.get_template('zone-file.j2')
+    return template.render(
+        zone_name=zone_name,
+        primary_ns=primary_ns,
+        admin_email_bind=admin_email_bind,
+        serial=serial,
+        ttl=ttl,
+        ns_ip_address=ns_ip_address,
+        ns_hostname=ns_hostname,
+        timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    )
+
+def render_zone_config(zone_name, zone_file_path):
+    """Render zone configuration block for named.conf"""
+    template = jinja_env.get_template('zone-config.j2')
+    return template.render(
+        zone_name=zone_name,
+        zone_file_path=zone_file_path,
+        timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    )
+
+def get_bind_directory_option(ssh, named_conf_path):
+    """
+    Extract the 'directory' option from BIND configuration.
+    Searches main config and included files.
+    Returns the directory path or None if not found.
+    """
+    try:
+        # Read main named.conf
+        stdin, stdout, stderr = ssh.exec_command(f'cat {named_conf_path}')
+        config_content = stdout.read().decode('utf-8')
+        
+        # Look for directory option in main config
+        import re
+        dir_match = re.search(r'directory\s+"([^"]+)"', config_content)
+        if dir_match:
+            return dir_match.group(1)
+        
+        # Look for include statements
+        include_pattern = re.compile(r'include\s+"([^"]+)"')
+        includes = include_pattern.findall(config_content)
+        
+        # Search in included files
+        for include_file in includes:
+            # Handle relative paths
+            if not include_file.startswith('/'):
+                config_dir = named_conf_path.rsplit('/', 1)[0]
+                include_file = f"{config_dir}/{include_file}"
+            
+            stdin, stdout, stderr = ssh.exec_command(f'cat {include_file} 2>/dev/null')
+            include_content = stdout.read().decode('utf-8')
+            dir_match = re.search(r'directory\s+"([^"]+)"', include_content)
+            if dir_match:
+                return dir_match.group(1)
+        
+        return None
+    except Exception as e:
+        print(f"Error reading BIND directory option: {e}")
+        return None
+
+def ensure_bind_directory_configured(ssh, named_conf_path, bind_user='bind'):
+    """
+    Ensure BIND has a proper directory option configured.
+    Creates named.conf.options if needed and sets up the directory.
+    Returns the directory path.
+    """
+    default_dir = '/var/lib/bind/zones'
+    
+    # Check if directory option already exists
+    existing_dir = get_bind_directory_option(ssh, named_conf_path)
+    
+    if existing_dir:
+        print(f"Found existing BIND directory: {existing_dir}")
+        # Ensure the directory exists and has proper permissions
+        ssh.exec_command(f'sudo mkdir -p {existing_dir}')
+        ssh.exec_command(f'sudo chown {bind_user}:{bind_user} {existing_dir}')
+        ssh.exec_command(f'sudo chmod 775 {existing_dir}')
+        return existing_dir
+    
+    print(f"No directory option found, configuring default: {default_dir}")
+    
+    # Determine config directory
+    config_dir = named_conf_path.rsplit('/', 1)[0]
+    options_file = f"{config_dir}/named.conf.options"
+    
+    # Check if named.conf.options exists
+    stdin, stdout, stderr = ssh.exec_command(f'test -f {options_file} && echo "exists"')
+    options_exists = stdout.read().decode('utf-8').strip() == 'exists'
+    
+    if not options_exists:
+        # Create named.conf.options with directory directive
+        options_content = f'''options {{
+    directory "{default_dir}";
+}};
+'''
+        stdin, stdout, stderr = ssh.exec_command(f"sudo tee {options_file} > /dev/null << 'EOF'\n{options_content}\nEOF")
+        ssh.exec_command(f'sudo chown root:{bind_user} {options_file}')
+        ssh.exec_command(f'sudo chmod 644 {options_file}')
+        print(f"Created {options_file}")
+        
+        # Ensure named.conf includes the options file
+        stdin, stdout, stderr = ssh.exec_command(f'grep -q "include.*named.conf.options" {named_conf_path} && echo "exists"')
+        include_exists = stdout.read().decode('utf-8').strip() == 'exists'
+        
+        if not include_exists:
+            include_line = f'include "{options_file}";'
+            # Add include at the beginning of named.conf
+            ssh.exec_command(f"sudo sed -i '1i {include_line}' {named_conf_path}")
+            print(f"Added include statement to {named_conf_path}")
+    else:
+        # Add directory option to existing named.conf.options
+        stdin, stdout, stderr = ssh.exec_command(f'grep -q "directory" {options_file} && echo "exists"')
+        has_directory = stdout.read().decode('utf-8').strip() == 'exists'
+        
+        if not has_directory:
+            # Insert directory option into options block
+            ssh.exec_command(f'''sudo sed -i '/options {{/a\\    directory "{default_dir}";' {options_file}''')
+            print(f"Added directory option to {options_file}")
+    
+    # Create and configure the directory
+    ssh.exec_command(f'sudo mkdir -p {default_dir}')
+    ssh.exec_command(f'sudo chown {bind_user}:{bind_user} {default_dir}')
+    ssh.exec_command(f'sudo chmod 775 {default_dir}')
+    print(f"Created and configured directory: {default_dir}")
+    
+    # Also ensure /var/cache/bind exists (needed by BIND)
+    ssh.exec_command(f'sudo mkdir -p /var/cache/bind')
+    ssh.exec_command(f'sudo chown {bind_user}:{bind_user} /var/cache/bind')
+    ssh.exec_command(f'sudo chmod 775 /var/cache/bind')
+    
+    return default_dir
+
+def detect_bind_paths(ssh):
+    """Detect BIND configuration paths and ensure proper setup"""
+    # Check for Debian/Ubuntu paths
+    stdin, stdout, stderr = ssh.exec_command('test -f /etc/bind/named.conf.local && echo "debian"')
+    result = stdout.read().decode('utf-8').strip()
+    
+    if result == "debian":
+        named_conf_main = '/etc/bind/named.conf'
+        named_conf = '/etc/bind/named.conf.local'
+        bind_user = 'bind'
+        bind_service = 'named'
+    else:
+        # RHEL/CentOS paths
+        named_conf_main = '/etc/named.conf'
+        named_conf = '/etc/named/named.conf.local'
+        bind_user = 'named'
+        bind_service = 'named'
+    
+    # Get or configure the zones directory
+    zones_dir = ensure_bind_directory_configured(ssh, named_conf_main, bind_user)
+    
+    return {
+        'named_conf': named_conf,
+        'zones_dir': zones_dir,
+        'bind_user': bind_user,
+        'bind_service': bind_service
+    }
+
+def ensure_bind_running(ssh, bind_service='named'):
+    """
+    Ensure BIND service is running. Returns status dict.
+    """
+    # Check if service is active
+    stdin, stdout, stderr = ssh.exec_command(f'systemctl is-active {bind_service} 2>/dev/null')
+    is_active = stdout.read().decode('utf-8').strip() == 'active'
+    
+    if is_active:
+        return {'running': True, 'message': 'BIND is running'}
+    
+    # Try to start the service
+    print(f"⚠️  BIND not running, using sudo to start {bind_service}...")
+    stdin, stdout, stderr = ssh.exec_command(f'sudo systemctl start {bind_service} 2>&1')
+    start_output = stdout.read().decode('utf-8')
+    
+    # Check if it started successfully
+    stdin, stdout, stderr = ssh.exec_command(f'systemctl is-active {bind_service} 2>/dev/null')
+    is_active = stdout.read().decode('utf-8').strip() == 'active'
+    
+    if is_active:
+        print(f"✅ BIND service started successfully")
+        return {'running': True, 'message': 'BIND started successfully'}
+    else:
+        # Get failure reason
+        print(f"❌ BIND service failed to start")
+        stdin, stdout, stderr = ssh.exec_command(f'sudo systemctl status {bind_service} 2>&1 | tail -20')
+        status_output = stdout.read().decode('utf-8')
+        return {
+            'running': False,
+            'message': 'BIND failed to start - check configuration',
+            'details': status_output
+        }
 
 @app.route('/')
 def index():
@@ -485,6 +795,241 @@ def get_zones():
         print(error_details)
         return jsonify({'error': str(e), 'details': error_details}), 500
 
+@app.route('/api/zones', methods=['POST'])
+def create_zone():
+    """Create a new DNS zone using templates"""
+    ssh = None
+    sftp = None
+    
+    try:
+        if not is_config_complete():
+            return jsonify({'error': 'BIND DNS configuration is incomplete. Please configure your credentials.'}), 400
+        
+        data = request.json
+        
+        # Validate required fields
+        zone_name = data.get('zone_name', '').strip()
+        primary_ns = data.get('primary_ns', '').strip()
+        admin_email = data.get('admin_email', '').strip()
+        ns_ip_address = data.get('ns_ip_address', '').strip() or None
+        
+        if not zone_name:
+            return jsonify({'error': 'Zone name is required'}), 400
+        
+        if not primary_ns:
+            return jsonify({'error': 'Primary nameserver is required'}), 400
+        
+        if not admin_email:
+            return jsonify({'error': 'Admin email is required'}), 400
+        
+        # Validate zone name format (basic check)
+        if not zone_name.replace('.', '').replace('-', '').replace('_', '').isalnum():
+            return jsonify({'error': 'Invalid zone name format'}), 400
+        
+        # Validate nameserver format (should be FQDN)
+        if '.' not in primary_ns:
+            return jsonify({'error': 'Primary nameserver must be a fully qualified domain name (FQDN)'}), 400
+        
+        # Validate email format
+        if '@' not in admin_email:
+            return jsonify({'error': 'Invalid admin email format'}), 400
+        
+        # Check if NS is within the zone and validate IP requirement
+        ns_is_in_zone = primary_ns.endswith(f'.{zone_name}') or primary_ns == zone_name
+        
+        if ns_is_in_zone and not ns_ip_address:
+            return jsonify({
+                'error': 'Nameserver IP address is required when the NS record is within this zone',
+                'details': 'A glue record (A record) must be created for nameservers within the zone to prevent circular dependencies'
+            }), 400
+        
+        # Reject IP address if NS is outside the zone (no glue record needed)
+        if not ns_is_in_zone and ns_ip_address:
+            return jsonify({
+                'error': 'Nameserver IP address should not be provided when NS is outside this zone',
+                'details': f'The nameserver {primary_ns} is not within the zone {zone_name}. Glue records are only needed for in-zone nameservers.'
+            }), 400
+        
+        # Validate IP address format if provided
+        if ns_ip_address:
+            import re
+            ip_pattern = re.compile(r'^(\d{1,3}\.){3}\d{1,3}$')
+            if not ip_pattern.match(ns_ip_address):
+                return jsonify({'error': 'Invalid IP address format'}), 400
+            
+            # Validate IP octets
+            octets = ns_ip_address.split('.')
+            if any(int(octet) > 255 or int(octet) < 0 for octet in octets):
+                return jsonify({'error': 'Invalid IP address: octets must be between 0 and 255'}), 400
+        
+        print(f"Creating zone: {zone_name} with NS: {primary_ns}, Admin: {admin_email}, NS IP: {ns_ip_address or 'N/A'}")
+        
+        # Connect to server
+        ssh = get_ssh_client()
+        sftp = ssh.open_sftp()
+        
+        # Detect BIND paths
+        paths = detect_bind_paths(ssh)
+        named_conf = paths['named_conf']
+        zones_dir = paths['zones_dir']
+        bind_user = paths['bind_user']
+        
+        zone_file_path = f"{zones_dir}/db.{zone_name}"
+        
+        print(f"Using paths - Config: {named_conf}, Zones: {zones_dir}, Zone file: {zone_file_path}")
+        
+        # Step 1: Check if zone already exists
+        stdin, stdout, stderr = ssh.exec_command(f'grep -q "zone \\"{zone_name}\\"" {named_conf} && echo "exists"')
+        if stdout.read().decode('utf-8').strip() == "exists":
+            return jsonify({'error': f'Zone {zone_name} already exists'}), 400
+        
+        # Step 2: Create zones directory if it doesn't exist
+        print(f"⚠️  Using sudo to create zones directory: {zones_dir}")
+        ssh.exec_command(f'sudo mkdir -p {zones_dir}')
+        
+        # Step 3: Render and write zone file
+        zone_file_content = render_zone_file(zone_name, primary_ns, admin_email, ns_ip_address=ns_ip_address)
+        
+        print(f"Generated zone file content:\n{zone_file_content}")
+        
+        # Write to temporary file first (in /tmp which is always writable)
+        temp_zone_file = f"/tmp/db.{zone_name}"
+        try:
+            with sftp.file(temp_zone_file, 'w') as f:
+                f.write(zone_file_content)
+        except Exception as sftp_error:
+            print(f"⚠️  SFTP write failed: {sftp_error}, trying alternative method...")
+            # Fallback: use echo with tee
+            zone_content_escaped = zone_file_content.replace("'", "'\\''")
+            stdin, stdout, stderr = ssh.exec_command(f"echo '{zone_content_escaped}' > {temp_zone_file}")
+            write_error = stderr.read().decode('utf-8')
+            if write_error:
+                print(f"Warning during temp file write: {write_error}")
+        
+        # Step 4: Validate zone file with named-checkzone
+        stdin, stdout, stderr = ssh.exec_command(f'named-checkzone {zone_name} {temp_zone_file}')
+        check_output = stdout.read().decode('utf-8')
+        check_error = stderr.read().decode('utf-8')
+        
+        print(f"Zone validation output: {check_output}")
+        if check_error:
+            print(f"Zone validation errors: {check_error}")
+        
+        if 'OK' not in check_output and 'loaded serial' not in check_output:
+            ssh.exec_command(f'sudo rm {temp_zone_file}')
+            return jsonify({
+                'error': 'Zone file validation failed',
+                'details': check_output + check_error
+            }), 400
+        
+        # Step 5: Move zone file to proper location and set permissions
+        print(f"⚠️  Using sudo to move zone file and set permissions")
+        stdin, stdout, stderr = ssh.exec_command(f'sudo mv {temp_zone_file} {zone_file_path}')
+        ssh.exec_command(f'sudo chown {bind_user}:{bind_user} {zone_file_path}')
+        ssh.exec_command(f'sudo chmod 644 {zone_file_path}')
+        
+        print(f"Zone file created and permissions set: {zone_file_path}")
+        
+        # Step 6: Backup named.conf
+        print(f"⚠️  Using sudo to backup configuration")
+        backup_file = f"{named_conf}.backup.{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        ssh.exec_command(f'sudo cp {named_conf} {backup_file}')
+        print(f"Backed up config to: {backup_file}")
+        
+        # Step 7: Render and append zone configuration to named.conf
+        zone_config = render_zone_config(zone_name, zone_file_path)
+        
+        print(f"Generated zone config:\n{zone_config}")
+        
+        # Write zone config to temp file (in /tmp which is always writable)
+        temp_config = f"/tmp/zone-config-{zone_name}.conf"
+        try:
+            with sftp.file(temp_config, 'w') as f:
+                f.write(zone_config)
+        except Exception as sftp_error:
+            print(f"⚠️  SFTP write failed: {sftp_error}, trying alternative method...")
+            # Fallback: use echo
+            zone_config_escaped = zone_config.replace("'", "'\\''")
+            stdin, stdout, stderr = ssh.exec_command(f"echo '{zone_config_escaped}' > {temp_config}")
+            write_error = stderr.read().decode('utf-8')
+            if write_error:
+                print(f"Warning during temp file write: {write_error}")
+        
+        # Append to named.conf
+        print(f"⚠️  Using sudo to update named.conf")
+        ssh.exec_command(f'sudo sh -c "cat {temp_config} >> {named_conf}"')
+        ssh.exec_command(f'rm {temp_config}')
+        
+        print(f"Zone configuration added to {named_conf}")
+        
+        # Step 8: Validate BIND configuration
+        print(f"⚠️  Using sudo to validate BIND configuration")
+        stdin, stdout, stderr = ssh.exec_command(f'sudo named-checkconf {named_conf}')
+        config_check_output = stdout.read().decode('utf-8')
+        config_check_error = stderr.read().decode('utf-8')
+        
+        if config_check_error:
+            print(f"Config validation failed: {config_check_error}")
+            # Rollback
+            print(f"⚠️  Using sudo to rollback configuration")
+            ssh.exec_command(f'sudo cp {backup_file} {named_conf}')
+            ssh.exec_command(f'sudo rm {zone_file_path}')
+            return jsonify({
+                'error': 'BIND configuration validation failed',
+                'details': config_check_error
+            }), 400
+        
+        print("Configuration validated successfully")
+        
+        # Step 9: Reload BIND
+        print(f"⚠️  Using sudo to reload BIND service")
+        stdin, stdout, stderr = ssh.exec_command('sudo rndc reload')
+        reload_output = stdout.read().decode('utf-8')
+        reload_error = stderr.read().decode('utf-8')
+        
+        print(f"BIND reload output: {reload_output}")
+        if reload_error:
+            print(f"BIND reload errors: {reload_error}")
+        
+        # Even if rndc reload has warnings, check if it succeeded
+        if 'failed' in reload_output.lower() or 'failed' in reload_error.lower():
+            # Try service reload as fallback
+            print(f"⚠️  Using sudo systemctl reload as fallback")
+            stdin, stdout, stderr = ssh.exec_command(f'sudo systemctl reload {paths["bind_service"]}')
+            service_output = stdout.read().decode('utf-8')
+            print(f"Service reload output: {service_output}")
+        
+        # Step 10: Refresh zones list
+        zones = discover_zones()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Zone {zone_name} created successfully',
+            'zone': {
+                'name': zone_name,
+                'primary_ns': primary_ns,
+                'admin_email': admin_email,
+                'file': zone_file_path
+            }
+        })
+        
+    except Exception as e:
+        print(f"Error creating zone: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if sftp:
+            try:
+                sftp.close()
+            except:
+                pass
+        if ssh:
+            try:
+                ssh.close()
+            except:
+                pass
+
 @app.route('/api/config/status', methods=['GET'])
 def config_status():
     """Check if BIND DNS configuration is complete"""
@@ -513,7 +1058,8 @@ def get_config():
 
 @app.route('/api/config', methods=['POST'])
 def save_config():
-    """Save BIND DNS configuration"""
+    """Save BIND DNS configuration and verify setup"""
+    ssh = None
     try:
         data = request.json
         
@@ -543,17 +1089,48 @@ def save_config():
         
         update_config(new_config)
         
-        return jsonify({
+        # Now verify the setup if BIND is already installed
+        response_data = {
             'success': True,
             'message': 'Configuration saved successfully'
-        })
+        }
+        
+        try:
+            ssh = get_ssh_client()
+            
+            # Check if BIND is installed
+            if check_bind_installed(ssh):
+                # Detect and configure BIND paths
+                bind_paths = detect_bind_paths(ssh)
+                
+                # Check BIND service status
+                bind_status = ensure_bind_running(ssh, bind_paths['bind_service'])
+                
+                if not bind_status['running']:
+                    response_data['warning'] = bind_status['message']
+                    if 'details' in bind_status:
+                        response_data['bind_error'] = bind_status['details']
+                else:
+                    response_data['bind_status'] = bind_status['message']
+                    response_data['zones_directory'] = bind_paths['zones_dir']
+        except Exception as verify_error:
+            # Don't fail the config save if verification fails
+            response_data['warning'] = f'Configuration saved but verification failed: {str(verify_error)}'
+        
+        return jsonify(response_data)
     except Exception as e:
         print(f"Error saving configuration: {str(e)}")
         return jsonify({'error': str(e)}), 500
+    finally:
+        if ssh:
+            try:
+                ssh.close()
+            except:
+                pass
 
 @app.route('/api/config/test', methods=['POST'])
 def test_config():
-    """Test BIND DNS connection before saving"""
+    """Test BIND DNS connection before saving and check if BIND is installed"""
     try:
         data = request.json
         
@@ -562,7 +1139,10 @@ def test_config():
         missing_fields = [field for field in required_fields if not data.get(field)]
         
         if missing_fields:
-            return jsonify({'error': f'Missing required fields: {", ".join(missing_fields)}'}), 400
+            return jsonify({
+                'error': f'Missing required fields: {", ".join(missing_fields)}',
+                'bindInstalled': False
+            }), 400
         
         # Temporarily update config for testing
         temp_config = config.copy()
@@ -576,11 +1156,31 @@ def test_config():
         })
         
         try:
+            # Try to establish SSH connection
+            ssh = get_ssh_client()
+            
+            # Check if BIND is installed
+            bind_installed = check_bind_installed(ssh)
+            
+            if not bind_installed:
+                # Restore original config
+                config.update(temp_config)
+                ssh.close()
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'Connection successful, but Bind is not installed',
+                    'bindInstalled': False,
+                    'zone_count': 0,
+                    'zones': []
+                })
+            
             # Try to discover zones
             zones = discover_zones()
             
             # Restore original config
             config.update(temp_config)
+            ssh.close()
             
             zone_count = len(zones)
             zone_names = ', '.join(list(zones.keys())[:5])
@@ -589,25 +1189,64 @@ def test_config():
             
             return jsonify({
                 'success': True,
-                'message': f'Connection successful! Found {zone_count} zone(s): {zone_names}',
+                'message': f'Connection successful, Bind already installed. Found {zone_count} zone(s): {zone_names}',
+                'bindInstalled': True,
                 'zone_count': zone_count,
                 'zones': list(zones.keys())
             })
+        except paramiko.ssh_exception.NoValidConnectionsError:
+            # Restore original config
+            config.update(temp_config)
+            return jsonify({
+                'error': 'Connection failed, Error: SSH connection refused',
+                'bindInstalled': False
+            }), 500
+        except paramiko.ssh_exception.AuthenticationException:
+            # Restore original config
+            config.update(temp_config)
+            return jsonify({
+                'error': 'Connection failed, Error: SSH user/password failed',
+                'bindInstalled': False
+            }), 500
+        except PermissionError:
+            # Restore original config
+            config.update(temp_config)
+            return jsonify({
+                'error': 'Connection failed, Error: SSH permission denied',
+                'bindInstalled': False
+            }), 500
         except Exception as test_error:
             # Restore original config
             config.update(temp_config)
             
-            error_msg = str(test_error)
-            if 'Authentication failed' in error_msg or 'No authentication' in error_msg:
-                return jsonify({'error': 'Authentication failed. Please check your credentials.'}), 401
-            elif 'Connection refused' in error_msg or 'timed out' in error_msg:
-                return jsonify({'error': f'Cannot connect to {data["bind_host"]}. Check host and port.'}), 500
+            error_msg = str(test_error).lower()
+            if 'connection refused' in error_msg or 'timed out' in error_msg:
+                return jsonify({
+                    'error': 'Connection failed, Error: SSH connection refused',
+                    'bindInstalled': False
+                }), 500
+            elif 'permission denied' in error_msg or 'publickey' in error_msg:
+                return jsonify({
+                    'error': 'Connection failed, Error: SSH permission denied',
+                    'bindInstalled': False
+                }), 500
+            elif 'authentication' in error_msg:
+                return jsonify({
+                    'error': 'Connection failed, Error: SSH user/password failed',
+                    'bindInstalled': False
+                }), 500
             else:
-                return jsonify({'error': f'Connection failed: {error_msg}'}), 500
+                return jsonify({
+                    'error': f'Connection failed: {str(test_error)}',
+                    'bindInstalled': False
+                }), 500
                 
     except Exception as e:
         print(f"Error testing configuration: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({
+            'error': str(e),
+            'bindInstalled': False
+        }), 500
 
 @app.route('/api/install-bind', methods=['POST'])
 def install_bind_endpoint():
@@ -695,13 +1334,43 @@ def create_record():
         zone_data = read_zone_file(zone_name=zone_name)
         
         # Add new record to zone data
-        # This is a simplified approach - in production you'd want more robust zone file manipulation
+        # For record types that reference hostnames (CNAME, MX, NS, SRV, PTR),
+        # ensure they end with a dot to prevent zone name appending
+        hostname_types = ['CNAME', 'MX', 'NS', 'SRV', 'PTR']
+        
         new_record_lines = []
         for value in values:
-            if record_type == 'MX':
-                new_record_lines.append(f"{record_name}\t{ttl}\tIN\t{record_type}\t{value}")
-            else:
-                new_record_lines.append(f"{record_name}\t{ttl}\tIN\t{record_type}\t{value}")
+            # For hostname-based records, ensure FQDN format (ending with dot)
+            if record_type in hostname_types:
+                # Split MX records (priority hostname)
+                if record_type == 'MX':
+                    parts = value.split(None, 1)  # Split on first whitespace
+                    if len(parts) == 2:
+                        priority, hostname = parts
+                        # Add dot if not present and not empty
+                        if hostname and not hostname.endswith('.'):
+                            hostname = hostname + '.'
+                        value = f"{priority} {hostname}"
+                    # If only one part, treat it as hostname with default priority
+                    elif len(parts) == 1 and not parts[0].isdigit():
+                        hostname = parts[0]
+                        if not hostname.endswith('.'):
+                            hostname = hostname + '.'
+                        value = f"10 {hostname}"  # Default priority
+                # For SRV records (priority weight port target)
+                elif record_type == 'SRV':
+                    parts = value.split()
+                    if len(parts) == 4:
+                        priority, weight, port, target = parts
+                        if target and not target.endswith('.'):
+                            target = target + '.'
+                        value = f"{priority} {weight} {port} {target}"
+                # For CNAME, NS, PTR - just the hostname
+                else:
+                    if value and not value.endswith('.'):
+                        value = value + '.'
+            
+            new_record_lines.append(f"{record_name}\t{ttl}\tIN\t{record_type}\t{value}")
         
         updated_zone = zone_data + "\n" + "\n".join(new_record_lines) + "\n"
         

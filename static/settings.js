@@ -134,7 +134,37 @@ async function handleTestConnection(e) {
         const data = await response.json();
         
         if (response.ok) {
+            // Display success message with BIND installation status
             showSuccess(`✅ ${data.message}`);
+            
+            // If BIND is not installed, show a note about the install checkbox
+            if (data.bindInstalled === false) {
+                const installCheckboxContainer = document.querySelector('.install-bind-container');
+                if (installCheckboxContainer) {
+                    installCheckboxContainer.style.border = '2px solid #f39c12';
+                    installCheckboxContainer.style.backgroundColor = '#fef5e7';
+                    installCheckboxContainer.style.padding = '12px';
+                    installCheckboxContainer.style.borderRadius = '8px';
+                    installCheckboxContainer.style.marginTop = '10px';
+                    
+                    // Add a note if it doesn't exist
+                    let note = installCheckboxContainer.querySelector('.install-note');
+                    if (!note) {
+                        note = document.createElement('div');
+                        note.className = 'install-note';
+                        note.style.fontSize = '13px';
+                        note.style.color = '#856404';
+                        note.style.marginTop = '8px';
+                        note.innerHTML = '💡 Check the box above to install BIND when saving configuration.';
+                        installCheckboxContainer.appendChild(note);
+                    }
+                    
+                    // Scroll to the install checkbox
+                    setTimeout(() => {
+                        installCheckboxContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }, 500);
+                }
+            }
         } else {
             showError(data.error || 'Connection test failed');
         }
@@ -155,6 +185,25 @@ async function handleTestConnection(e) {
 async function handleSaveConfig(e) {
     e.preventDefault();
     
+    // Check if user wants to install BIND first
+    if (installBindCheckbox && installBindCheckbox.checked) {
+        hideMessages();
+        
+        const installed = await installBind();
+        
+        if (!installed) {
+            return; // Don't save config if installation failed
+        }
+        
+        // Wait a moment for user to see completion
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        closeInstallModal();
+        
+        // Uncheck the install checkbox so we don't try to install again on next save
+        installBindCheckbox.checked = false;
+    }
+    
+    // Now save the configuration
     try {
         hideMessages();
         
@@ -177,12 +226,30 @@ async function handleSaveConfig(e) {
         const data = await response.json();
         
         if (response.ok) {
-            showSuccess(`✅ Configuration saved successfully!`);
+            // Show success message
+            let message = '✅ Configuration saved successfully!';
             
-            // Redirect to main page after 2 seconds
+            // Check for warnings (BIND startup issues)
+            if (data.warning) {
+                showWarning(`${message}\n\n⚠️ ${data.warning}`);
+                
+                // If there are detailed error logs, show them in console
+                if (data.bind_error) {
+                    console.error('BIND service error details:', data.bind_error);
+                }
+            } else {
+                showSuccess(message);
+                
+                // If BIND is running, show the zones directory being used
+                if (data.zones_directory) {
+                    showSuccess(`${message}\n📁 Zones directory: ${data.zones_directory}`);
+                }
+            }
+            
+            // Redirect to main page after 3 seconds
             setTimeout(() => {
                 window.location.href = '/';
-            }, 2000);
+            }, 3000);
         } else {
             showError(data.error || 'Failed to save configuration');
         }
@@ -228,6 +295,25 @@ function showSuccess(message) {
     setTimeout(() => {
         successMessage.style.display = 'none';
     }, 10000);
+}
+
+function showWarning(message) {
+    // Use success message element but with warning styling
+    successMessage.textContent = message;
+    successMessage.style.display = 'block';
+    successMessage.style.backgroundColor = '#fff3cd';
+    successMessage.style.color = '#856404';
+    successMessage.style.borderColor = '#ffeaa7';
+    errorMessage.style.display = 'none';
+    
+    // Auto-hide after 15 seconds (longer for warnings)
+    setTimeout(() => {
+        successMessage.style.display = 'none';
+        // Reset to success styling
+        successMessage.style.backgroundColor = '';
+        successMessage.style.color = '';
+        successMessage.style.borderColor = '';
+    }, 15000);
 }
 
 function showError(message) {
@@ -389,28 +475,4 @@ function getStepTitle(step) {
         'error': '❌ Error'
     };
     return titles[step] || step;
-}
-
-// Override handleSaveConfig to handle BIND installation
-const originalHandleSaveConfig = handleSaveConfig;
-async function handleSaveConfig(e) {
-    e.preventDefault();
-    
-    // Check if user wants to install BIND first
-    if (installBindCheckbox && installBindCheckbox.checked) {
-        hideMessages();
-        
-        const installed = await installBind();
-        
-        if (!installed) {
-            return; // Don't save config if installation failed
-        }
-        
-        // Wait a moment for user to see completion
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        closeInstallModal();
-    }
-    
-    // Proceed with normal config save
-    return originalHandleSaveConfig(e);
 }

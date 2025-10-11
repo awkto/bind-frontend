@@ -1,0 +1,7 @@
+
+// Zone: {{ zone_name }} (added {{ timestamp }})
+zone "{{ zone_name }}" {
+    type master;
+    file "{{ zone_file_path }}";
+    allow-update { none; };
+};

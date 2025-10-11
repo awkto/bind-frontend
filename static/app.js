@@ -15,6 +15,10 @@ const cancelEditBtn = document.getElementById('cancelEditBtn');
 const addModal = document.getElementById('addModal');
 const addRecordBtn = document.getElementById('addRecordBtn');
 const cancelAddBtn = document.getElementById('cancelAddBtn');
+const createZoneBtn = document.getElementById('createZoneBtn');
+const createZoneModal = document.getElementById('createZoneModal');
+const createZoneForm = document.getElementById('createZoneForm');
+const cancelCreateZoneBtn = document.getElementById('cancelCreateZoneBtn');
 const searchInput = document.getElementById('searchInput');
 const resultsCount = document.getElementById('resultsCount');
 const typeFilters = document.getElementById('typeFilters');
@@ -168,10 +172,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Event listeners for record management (only needed when configured)
     addRecordForm.addEventListener('submit', handleAddRecord);
     editRecordForm.addEventListener('submit', handleEditRecord);
+    createZoneForm.addEventListener('submit', handleCreateZone);
     refreshBtn.addEventListener('click', loadRecords);
     addRecordBtn.addEventListener('click', showAddModal);
+    createZoneBtn.addEventListener('click', showCreateZoneModal);
     cancelEditBtn.addEventListener('click', hideEditModal);
     cancelAddBtn.addEventListener('click', hideAddModal);
+    cancelCreateZoneBtn.addEventListener('click', hideCreateZoneModal);
     selectAllBtn.addEventListener('click', selectAllFilters);
     deselectAllBtn.addEventListener('click', deselectAllFilters);
     searchInput.addEventListener('input', applyFilters);
@@ -319,6 +326,9 @@ function buildTypeFilters() {
 async function handleAddRecord(e) {
     e.preventDefault();
     
+    // Clear previous messages
+    hideModalMessages('addModal');
+    
     const name = document.getElementById('recordName').value.trim();
     const type = document.getElementById('recordType').value;
     const ttl = parseInt(document.getElementById('recordTTL').value);
@@ -328,7 +338,7 @@ async function handleAddRecord(e) {
     const values = valuesText.split('\n').map(v => v.trim()).filter(v => v.length > 0);
     
     if (values.length === 0) {
-        showError('Please enter at least one value');
+        showModalError('addModal', 'Please enter at least one value');
         return;
     }
     
@@ -347,17 +357,21 @@ async function handleAddRecord(e) {
             throw new Error(data.error || 'Failed to create record');
         }
         
-        showSuccess('Record created successfully!');
-        addRecordForm.reset();
-        hideAddModal();
-        loadRecords();
+        showModalSuccess('addModal', 'Record created successfully!');
+        setTimeout(() => {
+            addRecordForm.reset();
+            hideAddModal();
+            loadRecords();
+        }, 1500);
     } catch (error) {
-        showError(`Failed to create record: ${error.message}`);
+        showModalError('addModal', `Failed to create record: ${error.message}`);
     }
 }
 
 // Edit record - show modal
 function editRecord(name, type, ttl, values, id) {
+    hideModalMessages('editModal');
+    
     document.getElementById('editRecordName').value = name;
     document.getElementById('editRecordType').value = type;
     document.getElementById('editRecordId').value = id;
@@ -373,6 +387,9 @@ function editRecord(name, type, ttl, values, id) {
 async function handleEditRecord(e) {
     e.preventDefault();
     
+    // Clear previous messages
+    hideModalMessages('editModal');
+    
     const name = document.getElementById('editRecordName').value;
     const type = document.getElementById('editRecordType').value;
     const id = document.getElementById('editRecordId').value;
@@ -382,7 +399,7 @@ async function handleEditRecord(e) {
     const values = valuesText.split('\n').map(v => v.trim()).filter(v => v.length > 0);
     
     if (values.length === 0) {
-        showError('Please enter at least one value');
+        showModalError('editModal', 'Please enter at least one value');
         return;
     }
     
@@ -401,11 +418,13 @@ async function handleEditRecord(e) {
             throw new Error(data.error || 'Failed to update record');
         }
         
-        showSuccess('Record updated successfully!');
-        hideEditModal();
-        loadRecords();
+        showModalSuccess('editModal', 'Record updated successfully!');
+        setTimeout(() => {
+            hideEditModal();
+            loadRecords();
+        }, 1500);
     } catch (error) {
-        showError(`Failed to update record: ${error.message}`);
+        showModalError('editModal', `Failed to update record: ${error.message}`);
     }
 }
 
@@ -439,6 +458,20 @@ function hideEditModal() {
 }
 
 function showAddModal() {
+    // Update zone badge in the modal
+    const zoneBadge = document.getElementById('addRecordZoneBadge');
+    if (zoneBadge && currentZone) {
+        zoneBadge.innerHTML = `
+            <svg class="badge-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/>
+            </svg>
+            Zone: ${currentZone}
+        `;
+        zoneBadge.style.display = 'inline-flex';
+    } else if (zoneBadge) {
+        zoneBadge.style.display = 'none';
+    }
+    
     addModal.classList.add('active');
 }
 
@@ -473,6 +506,47 @@ function showSuccess(message) {
     setTimeout(() => {
         successDiv.remove();
     }, 3000);
+}
+
+// Modal-specific error/success functions
+function showModalError(modalId, message) {
+    const errorElement = document.getElementById(`${modalId}Error`);
+    const successElement = document.getElementById(`${modalId}Success`);
+    
+    if (errorElement) {
+        errorElement.textContent = message;
+        errorElement.style.display = 'block';
+        if (successElement) successElement.style.display = 'none';
+        
+        // Auto-hide after 10 seconds
+        setTimeout(() => {
+            errorElement.style.display = 'none';
+        }, 10000);
+    }
+}
+
+function showModalSuccess(modalId, message) {
+    const errorElement = document.getElementById(`${modalId}Error`);
+    const successElement = document.getElementById(`${modalId}Success`);
+    
+    if (successElement) {
+        successElement.textContent = message;
+        successElement.style.display = 'block';
+        if (errorElement) errorElement.style.display = 'none';
+        
+        // Auto-hide after 5 seconds
+        setTimeout(() => {
+            successElement.style.display = 'none';
+        }, 5000);
+    }
+}
+
+function hideModalMessages(modalId) {
+    const errorElement = document.getElementById(`${modalId}Error`);
+    const successElement = document.getElementById(`${modalId}Success`);
+    
+    if (errorElement) errorElement.style.display = 'none';
+    if (successElement) successElement.style.display = 'none';
 }
 
 function escapeHtml(text) {
@@ -534,4 +608,165 @@ function applyFilters() {
     
     // Display filtered records
     displayRecords(filteredRecords);
+}
+
+// Create Zone Modal Functions
+function showCreateZoneModal() {
+    createZoneForm.reset();
+    hideModalMessages('createZoneModal');
+    createZoneModal.classList.add('active');
+    
+    // Set up auto-populate for admin email when zone name changes
+    const zoneNameInput = document.getElementById('zoneName');
+    const adminEmailInput = document.getElementById('adminEmail');
+    const primaryNSInput = document.getElementById('primaryNS');
+    const nsIpInput = document.getElementById('nsIpAddress');
+    
+    // Auto-populate admin email based on zone name
+    const handleZoneNameChange = () => {
+        const zoneName = zoneNameInput.value.trim();
+        if (zoneName && !adminEmailInput.value) {
+            adminEmailInput.value = `admin@${zoneName}`;
+        }
+    };
+    
+    // Remove any existing listeners
+    zoneNameInput.removeEventListener('blur', handleZoneNameChange);
+    // Add new listener
+    zoneNameInput.addEventListener('blur', handleZoneNameChange);
+    
+    // Add helper to detect if NS is within zone
+    const handleNSChange = () => {
+        const zoneName = zoneNameInput.value.trim();
+        const primaryNS = primaryNSInput.value.trim();
+        
+        if (zoneName && primaryNS && primaryNS.endsWith(`.${zoneName}`)) {
+            // NS is within the zone - make IP required and enable field
+            nsIpInput.setAttribute('required', 'required');
+            nsIpInput.removeAttribute('disabled');
+            nsIpInput.parentElement.querySelector('label').innerHTML = 'Nameserver IP Address *';
+            nsIpInput.parentElement.querySelector('.form-help').innerHTML = 
+                '<strong>Required for in-zone nameserver</strong> - Creates a glue record (A record) for the nameserver.';
+            nsIpInput.parentElement.style.opacity = '1';
+        } else if (zoneName && primaryNS) {
+            // NS is external - disable IP field and clear value
+            nsIpInput.removeAttribute('required');
+            nsIpInput.setAttribute('disabled', 'disabled');
+            nsIpInput.value = '';
+            nsIpInput.parentElement.querySelector('label').innerHTML = 'Nameserver IP Address';
+            nsIpInput.parentElement.querySelector('.form-help').innerHTML = 
+                'Not applicable - nameserver is outside this zone (no glue record needed).';
+            nsIpInput.parentElement.style.opacity = '0.5';
+        } else {
+            // Not enough info yet - keep field enabled but optional
+            nsIpInput.removeAttribute('required');
+            nsIpInput.removeAttribute('disabled');
+            nsIpInput.parentElement.querySelector('label').innerHTML = 'Nameserver IP Address';
+            nsIpInput.parentElement.querySelector('.form-help').innerHTML = 
+                '<strong>Required if NS is within this zone</strong> (e.g., ns1.example.com for example.com zone). This creates a glue record (A record) for the nameserver.';
+            nsIpInput.parentElement.style.opacity = '1';
+        }
+    };
+    
+    primaryNSInput.removeEventListener('blur', handleNSChange);
+    primaryNSInput.addEventListener('blur', handleNSChange);
+    primaryNSInput.removeEventListener('input', handleNSChange);
+    primaryNSInput.addEventListener('input', handleNSChange);
+    zoneNameInput.removeEventListener('blur', handleNSChange);
+    zoneNameInput.addEventListener('blur', handleNSChange);
+    zoneNameInput.removeEventListener('input', handleNSChange);
+    zoneNameInput.addEventListener('input', handleNSChange);
+}
+
+function hideCreateZoneModal() {
+    createZoneModal.classList.remove('active');
+}
+
+// Handle Create Zone
+async function handleCreateZone(e) {
+    e.preventDefault();
+    
+    // Clear previous messages
+    hideModalMessages('createZoneModal');
+    
+    const zoneName = document.getElementById('zoneName').value.trim();
+    const primaryNS = document.getElementById('primaryNS').value.trim();
+    const adminEmail = document.getElementById('adminEmail').value.trim();
+    const nsIpAddress = document.getElementById('nsIpAddress').value.trim();
+    
+    if (!zoneName || !primaryNS || !adminEmail) {
+        showModalError('createZoneModal', 'Please fill in all required fields');
+        return;
+    }
+    
+    // Check if NS is within the zone and requires IP
+    const nsIsInZone = primaryNS.endsWith(`.${zoneName}`) || primaryNS === zoneName;
+    if (nsIsInZone && !nsIpAddress) {
+        showModalError('createZoneModal', 'Nameserver IP address is required when the NS record is within this zone (glue record needed)');
+        return;
+    }
+    
+    // Validate IP address format if provided
+    if (nsIpAddress) {
+        const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
+        if (!ipRegex.test(nsIpAddress)) {
+            showModalError('createZoneModal', 'Invalid IP address format');
+            return;
+        }
+        
+        // Validate IP octets
+        const octets = nsIpAddress.split('.');
+        if (octets.some(octet => parseInt(octet) > 255 || parseInt(octet) < 0)) {
+            showModalError('createZoneModal', 'Invalid IP address: octets must be between 0 and 255');
+            return;
+        }
+    }
+    
+    try {
+        showLoading(true);
+        
+        const requestBody = {
+            zone_name: zoneName,
+            primary_ns: primaryNS,
+            admin_email: adminEmail
+        };
+        
+        // Only include ns_ip_address if provided
+        if (nsIpAddress) {
+            requestBody.ns_ip_address = nsIpAddress;
+        }
+        
+        const response = await fetch(`${API_BASE_URL}/zones`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody),
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            // Success!
+            showModalSuccess('createZoneModal', `✅ Zone ${zoneName} created successfully! Refreshing zones...`);
+            
+            setTimeout(async () => {
+                hideCreateZoneModal();
+                await loadZones();
+                
+                // Select the newly created zone
+                const zoneOption = Array.from(zoneSelector.options).find(opt => opt.value === zoneName);
+                if (zoneOption) {
+                    zoneSelector.value = zoneName;
+                    await handleZoneChange();
+                }
+            }, 2000);
+        } else {
+            showModalError('createZoneModal', data.error || 'Failed to create zone');
+        }
+    } catch (error) {
+        showError(`Failed to create zone: ${error.message}`);
+    } finally {
+        showLoading(false);
+    }
 }
