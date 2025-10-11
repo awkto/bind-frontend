@@ -883,8 +883,8 @@ def create_zone():
         if stdout.read().decode('utf-8').strip() == "exists":
             return jsonify({'error': f'Zone {zone_name} already exists'}), 400
         
-        # Step 2: Create zones directory if it doesn't exist
-        print(f"⚠️  Using sudo to create zones directory: {zones_dir}")
+        # Step 2: Ensure zones directory exists
+        print(f"✅ Ensuring zones directory exists: {zones_dir}")
         ssh.exec_command(f'sudo mkdir -p {zones_dir}')
         
         # Step 3: Render and write zone file
