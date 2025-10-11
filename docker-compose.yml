@@ -13,8 +13,7 @@ services:
       - BIND_USER=${BIND_USER}
       - BIND_SSH_KEY=${BIND_SSH_KEY}
       - BIND_PASSWORD=${BIND_PASSWORD}
-      - DNS_ZONE=${DNS_ZONE}
-      - ZONE_FILE_PATH=${ZONE_FILE_PATH}
+      - BIND_CONFIG_PATH=${BIND_CONFIG_PATH:-/etc/bind/named.conf}
     
     # Mount SSH keys if using key-based authentication
     volumes:

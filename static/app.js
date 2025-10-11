@@ -2,7 +2,7 @@
 const API_BASE_URL = '/api';
 
 // DOM Elements
-const zoneName = document.getElementById('zoneName');
+const zoneSelector = document.getElementById('zoneSelector');
 const recordCount = document.getElementById('recordCount');
 const recordsTableBody = document.getElementById('recordsTableBody');
 const loadingIndicator = document.getElementById('loadingIndicator');
@@ -28,6 +28,8 @@ const settingsBtn = document.getElementById('settingsBtn');
 // Store all records and selected types
 let allRecords = [];
 let selectedTypes = new Set();
+let availableZones = [];
+let currentZone = null;
 
 // Check configuration status
 async function checkConfigStatus() {
@@ -44,6 +46,61 @@ async function checkConfigStatus() {
     } catch (error) {
         console.error('Failed to check config status:', error);
         return false;
+    }
+}
+
+// Load available zones
+async function loadZones() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/zones`);
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to load zones');
+        }
+        
+        availableZones = data.zones || [];
+        
+        // Populate zone selector
+        zoneSelector.innerHTML = '';
+        if (availableZones.length === 0) {
+            zoneSelector.innerHTML = '<option value="">No zones found</option>';
+            return;
+        }
+        
+        availableZones.forEach(zone => {
+            const option = document.createElement('option');
+            option.value = zone.name;
+            option.textContent = zone.name;
+            zoneSelector.appendChild(option);
+        });
+        
+        // Load saved zone preference or select first zone
+        const savedZone = localStorage.getItem('selectedZone');
+        if (savedZone && availableZones.find(z => z.name === savedZone)) {
+            currentZone = savedZone;
+            zoneSelector.value = savedZone;
+        } else if (availableZones.length > 0) {
+            currentZone = availableZones[0].name;
+            zoneSelector.value = currentZone;
+        }
+        
+        // Load records for the selected zone
+        if (currentZone) {
+            await loadRecords();
+        }
+    } catch (error) {
+        console.error('Failed to load zones:', error);
+        showError(`Failed to load zones: ${error.message}`);
+    }
+}
+
+// Handle zone selection change
+function handleZoneChange() {
+    currentZone = zoneSelector.value;
+    if (currentZone) {
+        localStorage.setItem('selectedZone', currentZone);
+        loadRecords();
     }
 }
 
@@ -100,8 +157,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         return; // Will be redirected to settings page
     }
     
-    // Only load records if configured
-    loadRecords();
+    // Load zones and records
+    await loadZones();
+    
+    // Zone selector change listener
+    if (zoneSelector) {
+        zoneSelector.addEventListener('change', handleZoneChange);
+    }
     
     // Event listeners for record management (only needed when configured)
     addRecordForm.addEventListener('submit', handleAddRecord);
@@ -138,10 +200,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 // Load all DNS records
 async function loadRecords() {
     try {
+        if (!currentZone) {
+            showError('Please select a zone');
+            return;
+        }
+        
         showLoading(true);
         hideError();
         
-        const response = await fetch(`${API_BASE_URL}/records`);
+        const response = await fetch(`${API_BASE_URL}/records?zone=${encodeURIComponent(currentZone)}`);
         const data = await response.json();
         
         if (!response.ok) {
@@ -149,7 +216,6 @@ async function loadRecords() {
             throw new Error(data.error || `HTTP error! status: ${response.status}`);
         }
         
-        zoneName.textContent = data.zone;
         allRecords = data.records;
         
         // Build filter buttons from record types
@@ -272,7 +338,7 @@ async function handleAddRecord(e) {
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ name, type, ttl, values }),
+            body: JSON.stringify({ zone: currentZone, name, type, ttl, values }),
         });
         
         const data = await response.json();

@@ -13,12 +13,16 @@ const bindPortInput = document.getElementById('bindPort');
 const bindUserInput = document.getElementById('bindUser');
 const bindSshKeyInput = document.getElementById('bindSshKey');
 const bindPasswordInput = document.getElementById('bindPassword');
-const dnsZoneInput = document.getElementById('dnsZone');
-const zoneFilePathInput = document.getElementById('zoneFilePath');
+const bindConfigPathInput = document.getElementById('bindConfigPath');
+const installBindCheckbox = document.getElementById('installBind');
 
 const toggleSecretBtn = document.getElementById('toggleSecretBtn');
 const eyeIcon = document.getElementById('eyeIcon');
 const eyeOffIcon = document.getElementById('eyeOffIcon');
+
+const installModal = document.getElementById('installModal');
+const installSteps = document.getElementById('installSteps');
+const closeInstallModalBtn = document.getElementById('closeInstallModal');
 
 // Track if this is a first-time setup
 let isSetupMode = false;
@@ -30,6 +34,9 @@ document.addEventListener('DOMContentLoaded', () => {
     settingsForm.addEventListener('submit', handleSaveConfig);
     testConnectionBtn.addEventListener('click', handleTestConnection);
     toggleSecretBtn.addEventListener('click', toggleSecretVisibility);
+    if (closeInstallModalBtn) {
+        closeInstallModalBtn.addEventListener('click', closeInstallModal);
+    }
 });
 
 // Toggle password visibility
@@ -56,7 +63,7 @@ async function loadCurrentConfig() {
         
         if (response.ok) {
             // Check if any configuration is missing (SETUP MODE)
-            const hasAnyConfig = data.bind_host || data.dns_zone;
+            const hasAnyConfig = data.bind_host;
             
             isSetupMode = !hasAnyConfig;
             
@@ -71,7 +78,7 @@ async function loadCurrentConfig() {
                 }
                 // Update description for first-time setup
                 if (settingsDescription) {
-                    settingsDescription.innerHTML = '🚀 <strong>Welcome!</strong> Please configure your BIND DNS server connection to get started.';
+                    settingsDescription.innerHTML = '🚀 <strong>Welcome!</strong> Please configure your BIND DNS server connection to get started. Zones will be auto-discovered.';
                 }
             } else {
                 // Show back button when configuration exists
@@ -85,8 +92,7 @@ async function loadCurrentConfig() {
             bindPortInput.value = data.bind_port || '22';
             bindUserInput.value = data.bind_user || '';
             bindSshKeyInput.value = data.bind_ssh_key || '';
-            dnsZoneInput.value = data.dns_zone || '';
-            zoneFilePathInput.value = data.zone_file_path || '';
+            bindConfigPathInput.value = data.bind_config_path || '/etc/bind/named.conf';
             
             // Don't show the password value for security
             bindPasswordInput.value = '';
@@ -113,7 +119,7 @@ async function handleTestConnection(e) {
         
         // Validate required fields
         if (!validateConfig(config)) {
-            showError('Please fill in all required fields (Host, User, DNS Zone, Zone File Path, and either SSH Key or Password)');
+            showError('Please fill in all required fields (Host, User, and either SSH Key or Password)');
             return;
         }
         
@@ -156,7 +162,7 @@ async function handleSaveConfig(e) {
         
         // Validate required fields
         if (!validateConfig(config)) {
-            showError('Please fill in all required fields (Host, User, DNS Zone, Zone File Path, and either SSH Key or Password)');
+            showError('Please fill in all required fields (Host, User, and either SSH Key or Password)');
             return;
         }
         
@@ -171,7 +177,7 @@ async function handleSaveConfig(e) {
         const data = await response.json();
         
         if (response.ok) {
-            showSuccess(`✅ Configuration saved successfully! DNS Zone: ${data.zone}`);
+            showSuccess(`✅ Configuration saved successfully!`);
             
             // Redirect to main page after 2 seconds
             setTimeout(() => {
@@ -193,14 +199,13 @@ function getFormData() {
         bind_user: bindUserInput.value.trim(),
         bind_ssh_key: bindSshKeyInput.value.trim(),
         bind_password: bindPasswordInput.value.trim(),
-        dns_zone: dnsZoneInput.value.trim(),
-        zone_file_path: zoneFilePathInput.value.trim()
+        bind_config_path: bindConfigPathInput.value.trim() || '/etc/bind/named.conf'
     };
 }
 
 function validateConfig(config) {
     // Required fields
-    if (!config.bind_host || !config.bind_user || !config.dns_zone || !config.zone_file_path) {
+    if (!config.bind_host || !config.bind_user) {
         return false;
     }
     // Must have either SSH key or password
@@ -234,4 +239,178 @@ function showError(message) {
 function hideMessages() {
     successMessage.style.display = 'none';
     errorMessage.style.display = 'none';
+}
+
+// BIND Installation Functions
+async function installBind() {
+    const config = getFormData();
+    
+    // Validate required fields
+    if (!config.bind_host || !config.bind_user) {
+        showError('Please fill in host and user fields before installing BIND');
+        return false;
+    }
+    
+    if (!config.bind_ssh_key && !config.bind_password) {
+        showError('Please provide authentication (SSH key or password) before installing BIND');
+        return false;
+    }
+    
+    // Show installation modal
+    showInstallModal();
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/install-bind`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(config),
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Installation request failed');
+        }
+        
+        // Read the streaming response
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            const lines = decoder.decode(value).split('\n');
+            for (const line of lines) {
+                if (line.trim()) {
+                    try {
+                        const progress = JSON.parse(line);
+                        updateInstallStep(progress);
+                    } catch (e) {
+                        console.error('Failed to parse progress:', e);
+                    }
+                }
+            }
+        }
+        
+        return true;
+    } catch (error) {
+        console.error('Installation error:', error);
+        updateInstallStep({
+            step: 'error',
+            status: 'error',
+            message: `Installation failed: ${error.message}`
+        });
+        return false;
+    }
+}
+
+function showInstallModal() {
+    installSteps.innerHTML = '';
+    closeInstallModalBtn.style.display = 'none';
+    installModal.classList.add('active');
+}
+
+function closeInstallModal() {
+    installModal.classList.remove('active');
+}
+
+function updateInstallStep(progress) {
+    const { step, status, message } = progress;
+    
+    // Check if step already exists
+    let stepElement = document.getElementById(`install-step-${step}`);
+    
+    if (!stepElement) {
+        // Create new step element
+        stepElement = document.createElement('div');
+        stepElement.id = `install-step-${step}`;
+        stepElement.className = 'install-step';
+        
+        const iconHtml = status === 'running' 
+            ? '<div class="spinner"></div>'
+            : status === 'success'
+            ? '<svg class="install-step-icon" style="color: #10b981;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>'
+            : status === 'error'
+            ? '<svg class="install-step-icon" style="color: #ef4444;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>'
+            : '<div style="width: 1.5rem; height: 1.5rem;"></div>';
+        
+        stepElement.innerHTML = `
+            ${iconHtml}
+            <div class="install-step-content">
+                <div class="install-step-title">${getStepTitle(step)}</div>
+                <div class="install-step-details">${message}</div>
+            </div>
+        `;
+        
+        installSteps.appendChild(stepElement);
+    } else {
+        // Update existing step
+        const iconContainer = stepElement.querySelector(':first-child');
+        const detailsElement = stepElement.querySelector('.install-step-details');
+        
+        if (status === 'running') {
+            iconContainer.innerHTML = '<div class="spinner"></div>';
+        } else if (status === 'success') {
+            iconContainer.innerHTML = '<svg class="install-step-icon" style="color: #10b981;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>';
+        } else if (status === 'error') {
+            iconContainer.innerHTML = '<svg class="install-step-icon" style="color: #ef4444;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>';
+        }
+        
+        detailsElement.textContent = message;
+    }
+    
+    // Update step class
+    stepElement.className = 'install-step';
+    if (status === 'running') {
+        stepElement.classList.add('active');
+    } else if (status === 'success') {
+        stepElement.classList.add('success');
+    } else if (status === 'error') {
+        stepElement.classList.add('error');
+    }
+    
+    // Show close button on completion or error
+    if (step === 'complete' || step === 'error' || status === 'error') {
+        closeInstallModalBtn.style.display = 'inline-block';
+    }
+}
+
+function getStepTitle(step) {
+    const titles = {
+        'connect': '🔌 Connecting to Server',
+        'detect_os': '🖥️ Detecting Operating System',
+        'check_bind': '🔍 Checking BIND Installation',
+        'install': '📦 Installing BIND',
+        'enable_service': '⚙️ Enabling BIND Service',
+        'verify': '✅ Verifying Installation',
+        'complete': '🎉 Complete',
+        'error': '❌ Error'
+    };
+    return titles[step] || step;
+}
+
+// Override handleSaveConfig to handle BIND installation
+const originalHandleSaveConfig = handleSaveConfig;
+async function handleSaveConfig(e) {
+    e.preventDefault();
+    
+    // Check if user wants to install BIND first
+    if (installBindCheckbox && installBindCheckbox.checked) {
+        hideMessages();
+        
+        const installed = await installBind();
+        
+        if (!installed) {
+            return; // Don't save config if installation failed
+        }
+        
+        // Wait a moment for user to see completion
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        closeInstallModal();
+    }
+    
+    // Proceed with normal config save
+    return originalHandleSaveConfig(e);
 }

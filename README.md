@@ -1,6 +1,6 @@
 # BIND DNS Manager
 
-A modern web-based GUI for managing ISC BIND DNS zones. This application provides a user-friendly interface to view, add, edit, and delete DNS records by connecting to your BIND DNS server via SSH.
+A modern web-based GUI for managing ISC BIND DNS zones. This application provides a user-friendly interface to view, add, edit, and delete DNS records across multiple zones by connecting to your BIND DNS server via SSH.
 
 ![BIND DNS Manager](https://img.shields.io/badge/BIND-DNS%20Manager-005571?logo=linux)
 ![Python](https://img.shields.io/badge/Python-3.11+-green)
@@ -10,17 +10,21 @@ A modern web-based GUI for managing ISC BIND DNS zones. This application provide
 
 ## Features
 
-- 🌐 View all DNS records from BIND zone files
+- 🌐 **Multi-Zone Support**: Automatically discover and manage all zones from your BIND configuration
+- 🔄 **Auto-Discovery**: Zones and zone files are automatically detected from named.conf
+- 🎯 **Zone Selector**: Easy dropdown to switch between different DNS zones
+- 🚀 **Auto-Install BIND**: Automatically install BIND on target server (Ubuntu, Debian, RHEL, CentOS, Fedora)
+- 📊 **Real-time Installation Progress**: Visual workflow showing installation steps
 - ➕ Add new DNS records (A, AAAA, CNAME, MX, TXT, NS, etc.)
 - ✏️ Edit existing DNS records
 - 🗑️ Delete DNS records
 - 🔐 Secure SSH authentication (key-based or password)
-- 🔄 Automatic zone validation with `named-checkzone`
+- ✅ Automatic zone validation with `named-checkzone`
 - ⚡ Zone reload via `rndc` after changes
 - ⚙️ Web-based configuration management
 - 🎨 Modern, responsive web interface with dark mode
 - 🔍 Advanced search and filtering by record type
-- ⚡ Real-time updates without page refresh
+- 💾 Remembers your last selected zone
 - 🐳 Docker support for easy deployment
 
 ## Quick Start with Docker
@@ -32,21 +36,21 @@ docker run -d -p 5000:5000 \
   -e BIND_HOST=your-dns-server.com \
   -e BIND_USER=root \
   -e BIND_SSH_KEY=/root/.ssh/id_rsa \
-  -e DNS_ZONE=example.com \
-  -e ZONE_FILE_PATH=/etc/bind/zones/db.example.com \
+  -e BIND_CONFIG_PATH=/etc/bind/named.conf \
   -v ~/.ssh/id_rsa:/root/.ssh/id_rsa:ro \
   --name bind-dns-manager \
   yourusername/bind-dns-gui:latest
 ```
 
-Then open `http://localhost:5000` in your browser.
+Then open `http://localhost:5000` in your browser. The application will automatically discover all zones from your BIND configuration.
 
 ## Architecture
 
 - **Backend**: Python Flask REST API connecting via SSH to BIND server
-- **Frontend**: Vanilla HTML/CSS/JavaScript
+- **Frontend**: Vanilla HTML/CSS/JavaScript with zone selector
 - **Authentication**: SSH key-based or password authentication
 - **DNS Management**: Direct zone file manipulation with validation and reload
+- **Zone Discovery**: Automatic parsing of named.conf and included configuration files
 
 ```
 ┌─────────────────┐
@@ -139,8 +143,7 @@ docker run -d \
   -e BIND_PORT=22 \
   -e BIND_USER=root \
   -e BIND_SSH_KEY=/root/.ssh/id_rsa \
-  -e DNS_ZONE=example.com \
-  -e ZONE_FILE_PATH=/etc/bind/zones/db.example.com \
+  -e BIND_CONFIG_PATH=/etc/bind/named.conf \
   -v ~/.ssh/id_rsa:/root/.ssh/id_rsa:ro \
   yourusername/bind-dns-gui:latest
 
@@ -151,8 +154,7 @@ docker run -d \
   -e BIND_HOST=dns.example.com \
   -e BIND_USER=root \
   -e BIND_PASSWORD=your-password \
-  -e DNS_ZONE=example.com \
-  -e ZONE_FILE_PATH=/etc/bind/zones/db.example.com \
+  -e BIND_CONFIG_PATH=/etc/bind/named.conf \
   yourusername/bind-dns-gui:latest
 
 # Or use a .env file
@@ -163,6 +165,8 @@ docker run -d \
   -v ~/.ssh/id_rsa:/root/.ssh/id_rsa:ro \
   yourusername/bind-dns-gui:latest
 ```
+
+All zones configured in your BIND server will be automatically discovered and available in the zone selector dropdown.
 
 #### Build Docker Image Locally
 
@@ -251,12 +255,13 @@ BIND_USER=root
 BIND_SSH_KEY=/root/.ssh/id_rsa
 # BIND_PASSWORD=your-ssh-password
 
-# DNS Zone Configuration
-DNS_ZONE=example.com
-ZONE_FILE_PATH=/etc/bind/zones/db.example.com
+# BIND Configuration (zones will be auto-discovered)
+BIND_CONFIG_PATH=/etc/bind/named.conf
 ```
 
 **Important**: Never commit the `.env` file to version control!
+
+**Note**: The application will automatically discover all zones from your BIND configuration file. You no longer need to specify individual zone names or file paths.
 
 ### 4. Test Your Connection (Optional)
 
