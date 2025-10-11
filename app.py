@@ -128,12 +128,33 @@ def get_ssh_client():
         raise Exception(f"Failed to connect to BIND server: {str(e)}")
 
 def check_bind_installed(ssh):
-    """Check if BIND is installed on the server using bash script"""
+    """Check if BIND is installed on the server using multiple detection methods"""
     try:
-        # Simple check - just look for named binary
-        stdin, stdout, stderr = ssh.exec_command('command -v named >/dev/null 2>&1 && echo "INSTALLED" || echo "NOT_INSTALLED"')
-        result = stdout.read().decode('utf-8').strip()
-        return result == "INSTALLED"
+        # Try multiple detection methods for different systems
+        # Method 1: Check for named binary in common locations
+        check_commands = [
+            'command -v named >/dev/null 2>&1 && echo "INSTALLED"',
+            'command -v named-pkcs11 >/dev/null 2>&1 && echo "INSTALLED"',
+            'test -f /usr/sbin/named && echo "INSTALLED"',
+            'test -f /usr/bin/named && echo "INSTALLED"',
+            # Method 2: Check for BIND package on Debian/Ubuntu
+            'dpkg -l | grep -q "^ii.*bind9" && echo "INSTALLED"',
+            # Method 3: Check for BIND package on RHEL/CentOS
+            'rpm -q bind >/dev/null 2>&1 && echo "INSTALLED"',
+            # Method 4: Check for systemd service
+            'systemctl list-unit-files | grep -q "named.service\\|bind9.service" && echo "INSTALLED"'
+        ]
+        
+        # Try each method
+        for cmd in check_commands:
+            stdin, stdout, stderr = ssh.exec_command(cmd)
+            result = stdout.read().decode('utf-8').strip()
+            if result == "INSTALLED":
+                print(f"✅ BIND detected using: {cmd[:50]}...")
+                return True
+        
+        print("❌ BIND not detected by any method")
+        return False
     except Exception as e:
         print(f"Error checking BIND installation: {str(e)}")
         return False
