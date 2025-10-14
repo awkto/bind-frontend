@@ -871,6 +871,11 @@ def index():
     """Serve the main HTML page"""
     return send_from_directory('static', 'index.html')
 
+@app.route('/version.json')
+def version():
+    """Serve version information"""
+    return send_from_directory('.', 'version.json')
+
 @app.route('/<path:path>')
 def serve_static(path):
     """Serve static files"""

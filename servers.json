@@ -1,0 +1,16 @@
+{
+  "servers": [
+    {
+      "id": "c395de1f-2046-48ee-8d19-54230418b3e6",
+      "name": "Default Server",
+      "host": "ubuntu-bind.dnsif.ca",
+      "port": "22",
+      "user": "bindgui",
+      "ssh_key": "",
+      "password": "summer",
+      "config_path": "/etc/bind/named.conf",
+      "bind_options": {}
+    }
+  ],
+  "active_server_id": "c395de1f-2046-48ee-8d19-54230418b3e6"
+}

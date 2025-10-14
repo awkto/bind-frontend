@@ -3,6 +3,7 @@ const API_BASE_URL = '/api';
 
 // DOM Elements
 const zoneSelector = document.getElementById('zoneSelector');
+const serverSelector = document.getElementById('serverSelector');
 const recordCount = document.getElementById('recordCount');
 const recordsTableBody = document.getElementById('recordsTableBody');
 const loadingIndicator = document.getElementById('loadingIndicator');
@@ -102,12 +103,85 @@ async function loadZones() {
     }
 }
 
+// Load version from version.json
+async function loadVersion() {
+    try {
+        const response = await fetch('/version.json');
+        const data = await response.json();
+        const versionElement = document.getElementById('versionNumber');
+        if (versionElement) {
+            versionElement.textContent = `v${data.version}`;
+        }
+    } catch (error) {
+        console.error('Failed to load version:', error);
+        // Fallback to a default version if file doesn't exist
+        const versionElement = document.getElementById('versionNumber');
+        if (versionElement) {
+            versionElement.textContent = 'v1.0.0';
+        }
+    }
+}
+
 // Handle zone selection change
 function handleZoneChange() {
     currentZone = zoneSelector.value;
     if (currentZone) {
         localStorage.setItem('selectedZone', currentZone);
         loadRecords();
+    }
+}
+
+// Load available servers
+async function loadServers() {
+    if (!serverSelector) return;
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/servers`);
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to load servers');
+        }
+        
+        availableServers = data.servers || [];
+        
+        // Populate server selector
+        serverSelector.innerHTML = '';
+        if (availableServers.length === 0) {
+            serverSelector.innerHTML = '<option value="">No servers found</option>';
+            return;
+        }
+        
+        availableServers.forEach(server => {
+            const option = document.createElement('option');
+            option.value = server.id;
+            option.textContent = server.name || server.host;
+            serverSelector.appendChild(option);
+        });
+        
+        // Load saved server preference or select first server
+        const savedServerId = localStorage.getItem('selectedServerId');
+        if (savedServerId && availableServers.find(s => s.id === savedServerId)) {
+            currentServerId = savedServerId;
+            serverSelector.value = savedServerId;
+        } else if (availableServers.length > 0) {
+            currentServerId = availableServers[0].id;
+            serverSelector.value = currentServerId;
+        }
+    } catch (error) {
+        console.error('Failed to load servers:', error);
+        // If endpoint doesn't exist, show a default option
+        serverSelector.innerHTML = '<option value="default">Default Server</option>';
+        currentServerId = 'default';
+    }
+}
+
+// Handle server selection change
+function handleServerChange() {
+    currentServerId = serverSelector.value;
+    if (currentServerId) {
+        localStorage.setItem('selectedServerId', currentServerId);
+        loadZones();
     }
 }
 
@@ -148,6 +222,48 @@ function disableDarkMode() {
 document.addEventListener('DOMContentLoaded', async () => {
     initDarkMode();
     
+    // Load version from version.json
+    await loadVersion();
+    
+    // Version toggle functionality (hidden feature)
+    const versionToggle = document.getElementById('versionToggle');
+    const versionNumber = document.getElementById('versionNumber');
+    if (versionToggle && versionNumber) {
+        versionToggle.addEventListener('click', () => {
+            if (versionNumber.style.display === 'none') {
+                versionNumber.style.display = 'block';
+                setTimeout(() => versionNumber.classList.add('visible'), 10);
+            } else {
+                versionNumber.classList.remove('visible');
+                setTimeout(() => versionNumber.style.display = 'none', 300);
+            }
+        });
+    }
+    
+    // Hamburger menu toggle
+    const menuToggle = document.getElementById('menuToggle');
+    const dropdownMenu = document.getElementById('dropdownMenu');
+    if (menuToggle && dropdownMenu) {
+        menuToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            dropdownMenu.classList.toggle('active');
+        });
+        
+        // Close menu when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!menuToggle.contains(e.target) && !dropdownMenu.contains(e.target)) {
+                dropdownMenu.classList.remove('active');
+            }
+        });
+        
+        // Close menu when clicking a menu item
+        dropdownMenu.querySelectorAll('.menu-item').forEach(item => {
+            item.addEventListener('click', () => {
+                dropdownMenu.classList.remove('active');
+            });
+        });
+    }
+    
     // Always attach button listeners first, so they work even in SETUP MODE
     if (settingsBtn) {
         settingsBtn.addEventListener('click', () => window.location.href = '/settings.html');
@@ -168,8 +284,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         return; // Will be redirected to settings page
     }
     
-    // Load zones and records
+    // Load servers and zones
+    await loadServers();
     await loadZones();
+    
+    // Server selector change listener
+    if (serverSelector) {
+        serverSelector.addEventListener('change', handleServerChange);
+    }
     
     // Zone selector change listener
     if (zoneSelector) {
@@ -610,8 +732,10 @@ function applyFilters() {
     });
     
     // Update counts
-    recordCount.textContent = allRecords.length;
-    resultsCount.textContent = filteredRecords.length;
+    const count = allRecords.length;
+    recordCount.textContent = `${count} ${count === 1 ? 'record' : 'records'}`;
+    const resultCount = filteredRecords.length;
+    resultsCount.textContent = `${resultCount} ${resultCount === 1 ? 'result' : 'results'}`;
     
     // Display filtered records
     displayRecords(filteredRecords);
